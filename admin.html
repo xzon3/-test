@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <title>Xzon3 | Admin Portal</title>
+    <style>
+        :root { --gold: #d4a843; --bg: #050508; --card: #0d0d14; --text: #f0ede6; }
+        body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; display: flex; justify-content: center; padding: 50px 20px; }
+        .panel { background: var(--card); padding: 40px; border-radius: 20px; border: 1px solid rgba(212,168,67,0.2); width: 100%; max-width: 600px; box-shadow: 0 20px 50px rgba(0,0,0,0.8); }
+        h2 { color: var(--gold); text-align: center; margin-bottom: 30px; letter-spacing: 2px; text-transform: uppercase; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        .field { margin-bottom: 15px; }
+        label { font-size: 11px; color: #9b96a8; text-transform: uppercase; margin-bottom: 6px; display: block; }
+        input { width: 100%; padding: 12px; background: #161620; border: 1px solid #2a2a3a; border-radius: 10px; color: #fff; box-sizing: border-box; transition: 0.3s; }
+        input:focus { border-color: var(--gold); outline: none; }
+        button { width: 100%; padding: 15px; background: var(--gold); border: none; border-radius: 10px; font-weight: bold; cursor: pointer; margin-top: 20px; color: #000; transition: 0.3s; }
+        button:hover { background: #fff; }
+        #output-container { margin-top: 30px; display: none; }
+        #output { background: #000; padding: 20px; border-radius: 10px; border: 1px solid #333; font-family: monospace; font-size: 14px; color: var(--gold); white-space: pre-wrap; overflow-x: auto; margin-bottom: 10px; }
+        .copy-btn { background: #222; color: #fff; }
+        #placement-container { margin-top: 20px; display: none; }
+        #placement { background: rgba(212,168,67,0.08); border: 1px solid rgba(212,168,67,0.3); border-radius: 10px; padding: 16px; font-size: 13px; line-height: 1.6; color: var(--text); }
+        #placement code { display: inline-block; background: #000; color: var(--gold); padding: 6px 10px; border-radius: 6px; font-family: monospace; margin-top: 6px; font-size: 12px; }
+        .local-warning { background: rgba(255,77,126,0.1); border: 1px solid rgba(255,77,126,0.35); color: #ff9ab5; border-radius: 10px; padding: 12px 16px; font-size: 12px; margin-bottom: 25px; display: none; }
+    </style>
+</head>
+<body>
+
+<div class="panel">
+    <h2>Xzon3 Admin</h2>
+    <div class="local-warning" id="local-warning">⚠️ এই ফাইলটা লোকাল ফাইল (file://) হিসেবে খোলা আছে। পেজ-প্লেসমেন্ট ঠিকমতো বলতে হলে এটা আপনার লাইভ GitHub Pages সাইট থেকে খুলুন, যেমন: <code>https://username.github.io/repo/admin.html</code></div>
+    <div class="field"><label>Title (Optional)</label><input type="text" id="title"></div>
+    <div class="grid">
+        <div class="field"><label>Image URL</label><input type="text" id="image"></div>
+        <div class="field"><label>Target Link</label><input type="text" id="link"></div>
+        <div class="field"><label>Task Limit (Leave empty for Web)</label><input type="number" id="tasks"></div>
+        <div class="field"><label>Duration</label><input type="text" id="duration" placeholder="e.g. 05:30"></div>
+    </div>
+    <button onclick="generate()">Generate JSON Data</button>
+
+    <div id="output-container">
+        <label>Generated JSON:</label>
+        <div id="output"></div>
+        <button class="copy-btn" onclick="copyToClipboard()">Copy JSON to Clipboard</button>
+    </div>
+
+    <div id="placement-container">
+        <label>কোথায় পেস্ট করবেন:</label>
+        <div id="placement">লোড হচ্ছে...</div>
+    </div>
+</div>
+
+<script>
+    if (location.protocol === 'file:') {
+        document.getElementById('local-warning').style.display = 'block';
+    }
+
+    function generateId() {
+        let chars = 'abcdefghijklmnopqrstuvwxyz';
+        let nums = '0123456789';
+        let id = [];
+        // কমপক্ষে দুটি নাম্বার
+        id.push(nums[Math.floor(Math.random() * nums.length)]);
+        id.push(nums[Math.floor(Math.random() * nums.length)]);
+        // বাকি ৪টি ছোট হাতের অক্ষর বা নাম্বার
+        for(let i=0; i<4; i++) {
+            let pool = (Math.random() > 0.5) ? chars : nums;
+            id.push(pool[Math.floor(Math.random() * pool.length)]);
+        }
+        return id.sort(() => Math.random() - 0.5).join('');
+    }
+
+    async function generate() {
+        const tasksVal = document.getElementById('tasks').value;
+        const dir = tasksVal ? 'tma-posts' : 'web-posts';
+
+        let obj = {
+            id: generateId(),
+            image: document.getElementById('image').value,
+            targetLink: document.getElementById('link').value
+        };
+        if(document.getElementById('title').value) obj.title = document.getElementById('title').value;
+        if(tasksVal) obj.totalTasks = parseInt(tasksVal);
+        if(document.getElementById('duration').value) obj.duration = document.getElementById('duration').value;
+
+        const jsonStr = JSON.stringify(obj, null, 2);
+        document.getElementById('output').textContent = jsonStr + ",";
+        document.getElementById('output-container').style.display = 'block';
+
+        await showPlacementInstructions(dir);
+    }
+
+    async function fetchJSON(path) {
+        const res = await fetch(path, { cache: 'no-cache' });
+        if (!res.ok) throw new Error(`HTTP ${res.status} — ${path}`);
+        return res.json();
+    }
+
+    async function showPlacementInstructions(dir) {
+        const box = document.getElementById('placement');
+        document.getElementById('placement-container').style.display = 'block';
+        box.textContent = 'পেজ তথ্য লোড হচ্ছে...';
+
+        try {
+            const manifest = await fetchJSON(`${dir}/manifest.json`);
+            const pageSize = manifest.pageSize || 20;
+            const totalPages = manifest.totalPages || 0;
+
+            if (totalPages === 0) {
+                box.innerHTML = `⚠️ <b>${dir}</b>-এ এখনো কোনো পেজ নেই। এই পোস্টটা দিয়ে নতুন ফাইল বানান:<br><code>${dir}/page-1.json</code> → ভেতরে <code>[ &lt;এই পোস্ট&gt; ]</code> (অ্যারের মধ্যে)<br>আর <code>${dir}/manifest.json</code> আপডেট করুন:<br><code>{"totalPages": 1, "pageSize": ${pageSize}, "totalPosts": 1}</code>`;
+                return;
+            }
+
+            const lastPagePosts = await fetchJSON(`${dir}/page-${totalPages}.json`);
+            const currentCount = Array.isArray(lastPagePosts) ? lastPagePosts.length : 0;
+
+            if (currentCount < pageSize) {
+                const newTotalPosts = (totalPages - 1) * pageSize + currentCount + 1;
+                box.innerHTML = `✅ এই পোস্টটা <code>${dir}/page-${totalPages}.json</code>-এ পেস্ট করুন (এখন ${currentCount}/${pageSize} আছে)।<br>তারপর <code>${dir}/manifest.json</code>-এ <code>totalPosts</code> বদলে দিন: <code>${newTotalPosts}</code>`;
+            } else {
+                const newPage = totalPages + 1;
+                const newTotalPosts = totalPages * pageSize + 1;
+                box.innerHTML = `📄 <code>${dir}/page-${totalPages}.json</code> ভরে গেছে (${pageSize}/${pageSize})। নতুন ফাইল বানান:<br><code>${dir}/page-${newPage}.json</code> → ভেতরে <code>[ &lt;এই পোস্ট&gt; ]</code><br>আর <code>${dir}/manifest.json</code> আপডেট করুন:<br><code>{"totalPages": ${newPage}, "pageSize": ${pageSize}, "totalPosts": ${newTotalPosts}}</code>`;
+            }
+        } catch (err) {
+            box.innerHTML = `⚠️ পেজ তথ্য আনতে সমস্যা হয়েছে: ${err.message}<br>এই টুলটা লাইভ সাইট থেকে খুলছেন কিনা আর ${dir}/manifest.json ফাইলটা ঠিকমতো আছে কিনা দেখুন।`;
+        }
+    }
+
+    function copyToClipboard() {
+        const text = document.getElementById('output').textContent;
+        navigator.clipboard.writeText(text).then(() => alert("Copied to clipboard!"));
+    }
+</script>
+</body>
+</html>
+  
