@@ -273,6 +273,12 @@
       const shareText = post.title ? `Check this out: ${post.title}` : 'Check this out!';
 
       if (isTMA && window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.openTelegramLink) {
+        try {
+          await navigator.clipboard.writeText(shareUrl);
+          showToast('🔗 Link copied to clipboard!', 'success', 2000);
+        } catch (err) {
+          // clipboard write isn't available in every Telegram client — safe to ignore
+        }
         const tgShareUrl = `https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(shareText)}`;
         window.Telegram.WebApp.openTelegramLink(tgShareUrl);
         return;
