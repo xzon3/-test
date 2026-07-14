@@ -264,8 +264,9 @@
     }
 
     /* === Share (deep link to a specific post) ===
-       Uses Telegram's own share dialog inside the Mini App, and the
-       device's native share sheet (with clipboard fallback) on the web. */
+       Opens the device's native share sheet — same behavior on both the
+       Telegram Mini App and the plain website. Falls back to copying the
+       link (with a toast) only if the share sheet isn't available. */
 
     function buildPostShareURL(post) {
       // A https://t.me/<bot>/<app>?startapp=... link launches the Telegram
@@ -278,18 +279,6 @@
     async function sharePost(post) {
       const shareUrl  = buildPostShareURL(post);
       const shareText = post.title ? `Check this out: ${post.title}` : 'Check this out!';
-
-      if (isTMA && window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.openTelegramLink) {
-        try {
-          await navigator.clipboard.writeText(shareUrl);
-          showToast('🔗 Link copied to clipboard!', 'success', 2000);
-        } catch (err) {
-          // clipboard write isn't available in every Telegram client — safe to ignore
-        }
-        const tgShareUrl = `https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(shareText)}`;
-        window.Telegram.WebApp.openTelegramLink(tgShareUrl);
-        return;
-      }
 
       if (navigator.share) {
         try {
