@@ -67,6 +67,8 @@
     .thumb-badge.web { background: rgba(212,168,67,0.2); color: var(--gold); border: 1px solid rgba(212,168,67,0.3); }
     .thumb-play { position: absolute; bottom: 12px; left: 12px; width: 36px; height: 36px; background: rgba(212,168,67,0.9); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; backdrop-filter: blur(4px); }
     .thumb-duration { position: absolute; bottom: 12px; right: 12px; background: rgba(0,0,0,0.7); color: #fff; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; letter-spacing: 0.5px; backdrop-filter: blur(4px); z-index: 2; }
+    .thumb-upload-date { position: absolute; bottom: 12px; left: 98px; max-width: 108px; background: rgba(0,0,0,0.65); color: var(--text-secondary); padding: 3px 7px; border-radius: 4px; font-size: 10px; font-weight: 600; letter-spacing: 0.3px; backdrop-filter: blur(4px); z-index: 2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .thumb-upload-date:empty { display: none; }
     .card-body { padding: 16px; flex: 1; display: flex; flex-direction: column; gap: 12px; }
     .card-title { font-family: var(--font-display); font-size: 17px; font-weight: 600; line-height: 1.3; color: var(--text-primary); letter-spacing: 0.01em; }
     .task-progress { display: none; }
@@ -214,6 +216,11 @@
       UNLOCK_DURATION_SECONDS: 300,
       AD_VISIBILITY_THRESHOLD_MS: 15000,
 
+      // Your bot's username and Mini App short name (set via @BotFather).
+      // Shared post links use these to open the Mini App directly on that post.
+      TELEGRAM_BOT_USERNAME: '@GajshdnxvRobot',
+      TELEGRAM_APP_NAME: 'Test',
+
       AD_LINKS: [
         'https://momrollback.com/qxqkwff9?key=ae3e0a9a0b6baf68e06dbb4a2eda444b',
         'https://omg10.com/4/9897331',
@@ -261,11 +268,11 @@
        device's native share sheet (with clipboard fallback) on the web. */
 
     function buildPostShareURL(post) {
-      const url = new URL(location.href);
-      url.search = '';
-      url.hash = '';
-      url.searchParams.set('post', post.id);
-      return url.toString();
+      // A https://t.me/<bot>/<app>?startapp=... link launches the Telegram
+      // Mini App directly (Telegram routes it there instead of a browser).
+      // getDeepLinkPostId() below already knows how to read the "post_<id>"
+      // start_param and jump straight to that post once the app opens.
+      return `https://t.me/${CONFIG.TELEGRAM_BOT_USERNAME}/${CONFIG.TELEGRAM_APP_NAME}?startapp=post_${encodeURIComponent(post.id)}`;
     }
 
     async function sharePost(post) {
@@ -557,6 +564,7 @@
           <button class="thumb-share" data-action="share" aria-label="Share this post"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14l5-5-5-5"/><path d="M4 20v-7a4 4 0 0 1 4-4h12"/></svg></button>
           <span class="thumb-badge tma">Task</span>
           <div class="thumb-play">▶</div>
+          <div class="thumb-upload-date">${formatUploadDateTime(post.uploadDate)}</div>
           <div class="thumb-duration">${post.duration || '0:00'}</div>
         </div>
         <div class="card-body">
@@ -749,6 +757,7 @@
           <button class="thumb-share" data-action="share" aria-label="Share this post"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14l5-5-5-5"/><path d="M4 20v-7a4 4 0 0 1 4-4h12"/></svg></button>
           <span class="thumb-badge web">Premium</span>
           <div class="thumb-play">▶</div>
+          <div class="thumb-upload-date">${formatUploadDateTime(post.uploadDate)}</div>
           <div class="thumb-duration">${post.duration || '0:00'}</div>
         </div>
         <div class="card-body">
@@ -871,6 +880,15 @@
         console.error('[WEB] Mount error:', err);
         showError(`Could not load content. ${err.message}`);
       }
+    }
+
+    function formatUploadDateTime(value) {
+      if (!value) return '';
+      const d = new Date(value);
+      if (isNaN(d.getTime())) return '';
+      const datePart = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      const timePart = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+      return `${datePart}, ${timePart}`;
     }
 
     function escapeHTML(str) {
