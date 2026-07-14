@@ -419,9 +419,14 @@
         }
         const targetCard = postsGridEl.querySelector(`[data-post-id="${targetPostId}"]`);
         if (targetCard) {
-          targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          targetCard.classList.add('shared-highlight');
-          setTimeout(() => targetCard.classList.remove('shared-highlight'), 2400);
+          // postsGridEl is still `display:none` at this point (showPosts() runs later,
+          // in the caller, after this function resolves) — scrollIntoView is a silent
+          // no-op on a hidden container, so defer until after the grid is visible.
+          setTimeout(() => {
+            targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            targetCard.classList.add('shared-highlight');
+            setTimeout(() => targetCard.classList.remove('shared-highlight'), 2400);
+          }, 150);
         }
       } else {
         await loadNextPage();
