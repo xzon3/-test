@@ -59,6 +59,10 @@
     .post-card:hover .card-thumb img { transform: scale(1.04); filter: brightness(1) saturate(1.2); }
     .thumb-overlay { position: absolute; inset: 0; background: linear-gradient(to top, rgba(5,5,8,0.85) 0%, transparent 50%); pointer-events: none; }
     .thumb-badge { position: absolute; top: 10px; right: 10px; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 3px 8px; border-radius: var(--radius-pill); backdrop-filter: blur(8px); }
+    .thumb-share { position: absolute; top: 10px; left: 10px; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.45); border: 1px solid var(--border-subtle); border-radius: 50%; backdrop-filter: blur(6px); color: var(--text-primary); font-size: 13px; line-height: 1; cursor: pointer; z-index: 3; transition: all var(--transition-base); }
+    .thumb-share:hover { background: var(--gold); color: #0a0800; border-color: var(--gold); transform: scale(1.08); }
+    @keyframes shared-pulse { 0%, 100% { box-shadow: var(--shadow-card); } 50% { box-shadow: 0 0 0 4px var(--gold), var(--shadow-card); } }
+    .post-card.shared-highlight { animation: shared-pulse 1s ease-in-out 2; }
     .thumb-badge.tma { background: rgba(0,229,200,0.2); color: var(--neon-teal); border: 1px solid rgba(0,229,200,0.3); }
     .thumb-badge.web { background: rgba(212,168,67,0.2); color: var(--gold); border: 1px solid rgba(212,168,67,0.3); }
     .thumb-play { position: absolute; bottom: 12px; left: 12px; width: 36px; height: 36px; background: rgba(212,168,67,0.9); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; backdrop-filter: blur(4px); }
@@ -252,6 +256,54 @@
       return toast;
     }
 
+    /* === Share (deep link to a specific post) ===
+       Uses Telegram's own share dialog inside the Mini App, and the
+       device's native share sheet (with clipboard fallback) on the web. */
+
+    function buildPostShareURL(post) {
+      const url = new URL(location.href);
+      url.search = '';
+      url.hash = '';
+      url.searchParams.set('post', post.id);
+      return url.toString();
+    }
+
+    async function sharePost(post) {
+      const shareUrl  = buildPostShareURL(post);
+      const shareText = post.title ? `Check this out: ${post.title}` : 'Check this out!';
+
+      if (isTMA && window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.openTelegramLink) {
+        const tgShareUrl = `https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(shareText)}`;
+        window.Telegram.WebApp.openTelegramLink(tgShareUrl);
+        return;
+      }
+
+      if (navigator.share) {
+        try {
+          await navigator.share({ title: shareText, url: shareUrl });
+        } catch (err) {
+          // user cancelled the share sheet — nothing to do
+        }
+        return;
+      }
+
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        showToast('🔗 Link copied to clipboard!', 'success', 2500);
+      } catch (err) {
+        showToast('Could not copy the link.', 'error');
+      }
+    }
+
+    function getDeepLinkPostId() {
+      if (isTMA && window.Telegram.WebApp.initDataUnsafe && window.Telegram.WebApp.initDataUnsafe.start_param) {
+        const sp = window.Telegram.WebApp.initDataUnsafe.start_param;
+        return sp.startsWith('post_') ? sp.slice(5) : sp;
+      }
+      const params = new URLSearchParams(location.search);
+      return params.get('post');
+    }
+
     const lazyObserver = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
         if (entry.isIntersecting) {
@@ -349,7 +401,7 @@
       }
     }
 
-    async function startPagedInfiniteScroll(dir, buildCard, attachListeners, cacheTarget) {
+    async function startPagedInfiniteScroll(dir, buildCard, attachListeners, cacheTarget, targetPostId) {
       teardownInfiniteScroll();
       const manifest = await fetchManifest(dir);
       const totalPages = manifest.totalPages || 0;
@@ -357,7 +409,26 @@
 
       _pageState = { dir, currentPage: 0, totalPages, buildCard, attachListeners, cacheTarget };
 
-      await loadNextPage();
+      const targetPage = (targetPostId && manifest.postPages) ? manifest.postPages[targetPostId] : null;
+
+      if (targetPage) {
+        // Load every page up to and including the one holding the shared post,
+        // then scroll to it and briefly highlight it. Scroll continues normally after.
+        for (let p = 1; p <= targetPage && p <= totalPages; p++) {
+          await loadNextPage();
+        }
+        const targetCard = postsGridEl.querySelector(`[data-post-id="${targetPostId}"]`);
+        if (targetCard) {
+          targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          targetCard.classList.add('shared-highlight');
+          setTimeout(() => targetCard.classList.remove('shared-highlight'), 2400);
+        }
+      } else {
+        await loadNextPage();
+        if (targetPostId) {
+          showToast('Shared post could not be found — it may have been removed.', 'error');
+        }
+      }
 
       _scrollObserver = new IntersectionObserver((entries) => {
         entries.forEach((entry) => {
@@ -472,6 +543,7 @@
         <div class="card-thumb">
           <img src="${post.image}" alt="${escapeHTML(post.title)}" loading="lazy" />
           <div class="thumb-overlay"></div>
+          <button class="thumb-share" data-action="share" aria-label="Share this post">📤</button>
           <span class="thumb-badge tma">Task</span>
           <div class="thumb-play">▶</div>
           <div class="thumb-duration">${post.duration || '0:00'}</div>
@@ -599,13 +671,21 @@
           if (link) window.open(link, '_blank', 'noopener,noreferrer');
         });
       }
+
+      const shareBtn = card.querySelector('[data-action="share"]');
+      if (shareBtn) {
+        shareBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          sharePost(post);
+        });
+      }
     }
 
     async function mountTMAModule() {
       try {
         postsGridEl.innerHTML = '';
         _tmaPostsCache = [];
-        await startPagedInfiniteScroll(CONFIG.TMA_DATA_DIR, buildTMACard, attachTMACardListeners, _tmaPostsCache);
+        await startPagedInfiniteScroll(CONFIG.TMA_DATA_DIR, buildTMACard, attachTMACardListeners, _tmaPostsCache, getDeepLinkPostId());
         showPosts();
       } catch (err) {
         console.error('[TMA] Mount error:', err);
@@ -655,6 +735,7 @@
         <div class="card-thumb">
           <img src="${post.image}" alt="${escapeHTML(post.title)}" />
           <div class="thumb-overlay"></div>
+          <button class="thumb-share" data-action="share" aria-label="Share this post">📤</button>
           <span class="thumb-badge web">Premium</span>
           <div class="thumb-play">▶</div>
           <div class="thumb-duration">${post.duration || '0:00'}</div>
@@ -671,6 +752,14 @@
     }
 
     function attachWebCardListeners(card, post) {
+      const shareBtn = card.querySelector('[data-action="share"]');
+      if (shareBtn) {
+        shareBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          sharePost(post);
+        });
+      }
+
       const taskBtn = card.querySelector('[data-action="web-task"]');
       if (!taskBtn) return;
 
@@ -765,7 +854,7 @@
     async function mountWebModule() {
       try {
         postsGridEl.innerHTML = '';
-        await startPagedInfiniteScroll(CONFIG.WEB_DATA_DIR, buildWebCard, attachWebCardListeners, null);
+        await startPagedInfiniteScroll(CONFIG.WEB_DATA_DIR, buildWebCard, attachWebCardListeners, null, getDeepLinkPostId());
         showPosts();
       } catch (err) {
         console.error('[WEB] Mount error:', err);

@@ -47,6 +47,7 @@
     <div id="placement-container">
         <label>কোথায় পেস্ট করবেন:</label>
         <div id="placement">লোড হচ্ছে...</div>
+        <button class="copy-btn" id="copy-manifest-btn" onclick="copyManifest()" style="display:none;">Copy Updated manifest.json</button>
     </div>
 </div>
 
@@ -70,12 +71,15 @@
         return id.sort(() => Math.random() - 0.5).join('');
     }
 
+    let _pendingManifest = null;
+
     async function generate() {
         const tasksVal = document.getElementById('tasks').value;
         const dir = tasksVal ? 'tma-posts' : 'web-posts';
+        const newId = generateId();
 
         let obj = {
-            id: generateId(),
+            id: newId,
             image: document.getElementById('image').value,
             targetLink: document.getElementById('link').value
         };
@@ -87,7 +91,7 @@
         document.getElementById('output').textContent = jsonStr + ",";
         document.getElementById('output-container').style.display = 'block';
 
-        await showPlacementInstructions(dir);
+        await showPlacementInstructions(dir, newId);
     }
 
     async function fetchJSON(path) {
@@ -96,35 +100,48 @@
         return res.json();
     }
 
-    async function showPlacementInstructions(dir) {
+    async function showPlacementInstructions(dir, postId) {
         const box = document.getElementById('placement');
+        const copyBtn = document.getElementById('copy-manifest-btn');
         document.getElementById('placement-container').style.display = 'block';
+        copyBtn.style.display = 'none';
+        _pendingManifest = null;
         box.textContent = 'পেজ তথ্য লোড হচ্ছে...';
 
         try {
-            const manifest = await fetchJSON(`${dir}/manifest.json`);
-            const pageSize = manifest.pageSize || 20;
+            const manifest   = await fetchJSON(`${dir}/manifest.json`);
+            const pageSize   = manifest.pageSize || 20;
             const totalPages = manifest.totalPages || 0;
+            const postPages  = manifest.postPages || {};
 
             if (totalPages === 0) {
-                box.innerHTML = `⚠️ <b>${dir}</b>-এ এখনো কোনো পেজ নেই। এই পোস্টটা দিয়ে নতুন ফাইল বানান:<br><code>${dir}/page-1.json</code> → ভেতরে <code>[ &lt;এই পোস্ট&gt; ]</code> (অ্যারের মধ্যে)<br>আর <code>${dir}/manifest.json</code> আপডেট করুন:<br><code>{"totalPages": 1, "pageSize": ${pageSize}, "totalPosts": 1}</code>`;
-                return;
-            }
-
-            const lastPagePosts = await fetchJSON(`${dir}/page-${totalPages}.json`);
-            const currentCount = Array.isArray(lastPagePosts) ? lastPagePosts.length : 0;
-
-            if (currentCount < pageSize) {
-                const newTotalPosts = (totalPages - 1) * pageSize + currentCount + 1;
-                box.innerHTML = `✅ এই পোস্টটা <code>${dir}/page-${totalPages}.json</code>-এ পেস্ট করুন (এখন ${currentCount}/${pageSize} আছে)।<br>তারপর <code>${dir}/manifest.json</code>-এ <code>totalPosts</code> বদলে দিন: <code>${newTotalPosts}</code>`;
+                _pendingManifest = { totalPages: 1, pageSize, totalPosts: 1, postPages: { ...postPages, [postId]: 1 } };
+                box.innerHTML = `⚠️ <b>${dir}</b>-এ এখনো কোনো পেজ নেই। নতুন ফাইল বানান:<br><code>${dir}/page-1.json</code> → ভেতরে <code>[ &lt;এই পোস্ট&gt; ]</code> (অ্যারের মধ্যে)<br>তারপর নিচের বাটনে ক্লিক করে <code>${dir}/manifest.json</code>-এর পুরো কনটেন্ট কপি করে সেই ফাইলে বসিয়ে দিন।`;
             } else {
-                const newPage = totalPages + 1;
-                const newTotalPosts = totalPages * pageSize + 1;
-                box.innerHTML = `📄 <code>${dir}/page-${totalPages}.json</code> ভরে গেছে (${pageSize}/${pageSize})। নতুন ফাইল বানান:<br><code>${dir}/page-${newPage}.json</code> → ভেতরে <code>[ &lt;এই পোস্ট&gt; ]</code><br>আর <code>${dir}/manifest.json</code> আপডেট করুন:<br><code>{"totalPages": ${newPage}, "pageSize": ${pageSize}, "totalPosts": ${newTotalPosts}}</code>`;
+                const lastPagePosts = await fetchJSON(`${dir}/page-${totalPages}.json`);
+                const currentCount  = Array.isArray(lastPagePosts) ? lastPagePosts.length : 0;
+
+                if (currentCount < pageSize) {
+                    const newTotalPosts = (totalPages - 1) * pageSize + currentCount + 1;
+                    _pendingManifest = { totalPages, pageSize, totalPosts: newTotalPosts, postPages: { ...postPages, [postId]: totalPages } };
+                    box.innerHTML = `✅ এই পোস্টটা <code>${dir}/page-${totalPages}.json</code>-এ পেস্ট করুন (এখন ${currentCount}/${pageSize} আছে)।<br>তারপর নিচের বাটনে ক্লিক করে <code>${dir}/manifest.json</code>-এর পুরো কনটেন্ট কপি করে সেই ফাইলে বসিয়ে দিন।`;
+                } else {
+                    const newPage = totalPages + 1;
+                    const newTotalPosts = totalPages * pageSize + 1;
+                    _pendingManifest = { totalPages: newPage, pageSize, totalPosts: newTotalPosts, postPages: { ...postPages, [postId]: newPage } };
+                    box.innerHTML = `📄 <code>${dir}/page-${totalPages}.json</code> ভরে গেছে (${pageSize}/${pageSize})। নতুন ফাইল বানান:<br><code>${dir}/page-${newPage}.json</code> → ভেতরে <code>[ &lt;এই পোস্ট&gt; ]</code><br>তারপর নিচের বাটনে ক্লিক করে <code>${dir}/manifest.json</code>-এর পুরো কনটেন্ট কপি করে সেই ফাইলে বসিয়ে দিন।`;
+                }
             }
+            copyBtn.style.display = 'block';
         } catch (err) {
             box.innerHTML = `⚠️ পেজ তথ্য আনতে সমস্যা হয়েছে: ${err.message}<br>এই টুলটা লাইভ সাইট থেকে খুলছেন কিনা আর ${dir}/manifest.json ফাইলটা ঠিকমতো আছে কিনা দেখুন।`;
         }
+    }
+
+    function copyManifest() {
+        if (!_pendingManifest) return;
+        navigator.clipboard.writeText(JSON.stringify(_pendingManifest, null, 2))
+            .then(() => alert('manifest.json কপি হয়েছে! এখন লক্ষ্যের ফাইলে পেস্ট করে সম্পূর্ণ কনটেন্ট রিপ্লেস করুন।'));
     }
 
     function copyToClipboard() {
