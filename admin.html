@@ -35,6 +35,7 @@
         <div class="field"><label>Target Link</label><input type="text" id="link"></div>
         <div class="field"><label>Task Limit (Leave empty for Web)</label><input type="number" id="tasks"></div>
         <div class="field"><label>Duration</label><input type="text" id="duration" placeholder="e.g. 05:30"></div>
+        <div class="field"><label>Upload Date</label><input type="datetime-local" id="uploadDate"></div>
     </div>
     <button onclick="generate()">Generate JSON Data</button>
 
@@ -55,6 +56,11 @@
     if (location.protocol === 'file:') {
         document.getElementById('local-warning').style.display = 'block';
     }
+
+    (function prefillUploadDate() {
+        const d = new Date(Date.now() - new Date().getTimezoneOffset() * 60000);
+        document.getElementById('uploadDate').value = d.toISOString().slice(0, 16);
+    })();
 
     function generateId() {
         let chars = 'abcdefghijklmnopqrstuvwxyz';
@@ -86,6 +92,8 @@
         if(document.getElementById('title').value) obj.title = document.getElementById('title').value;
         if(tasksVal) obj.totalTasks = parseInt(tasksVal);
         if(document.getElementById('duration').value) obj.duration = document.getElementById('duration').value;
+        const uploadDateVal = document.getElementById('uploadDate').value;
+        if(uploadDateVal) obj.uploadDate = new Date(uploadDateVal).toISOString();
 
         const jsonStr = JSON.stringify(obj, null, 2);
         document.getElementById('output').textContent = jsonStr + ",";
