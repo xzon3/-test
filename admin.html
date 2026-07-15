@@ -4,31 +4,53 @@
     <meta charset="UTF-8">
     <title>Xzon3 | Admin Portal</title>
     <style>
-        :root { --gold: #d4a843; --bg: #050508; --card: #0d0d14; --text: #f0ede6; }
+        :root { --gold: #d4a843; --bg: #050508; --card: #0d0d14; --text: #f0ede6; --teal: #00e5c8; --rose: #ff4d7e; }
         body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; display: flex; justify-content: center; padding: 50px 20px; }
         .panel { background: var(--card); padding: 40px; border-radius: 20px; border: 1px solid rgba(212,168,67,0.2); width: 100%; max-width: 600px; box-shadow: 0 20px 50px rgba(0,0,0,0.8); }
-        h2 { color: var(--gold); text-align: center; margin-bottom: 30px; letter-spacing: 2px; text-transform: uppercase; }
+        h2 { color: var(--gold); text-align: center; margin-bottom: 8px; letter-spacing: 2px; text-transform: uppercase; }
+        h3 { color: var(--text); font-size: 12px; text-transform: uppercase; letter-spacing: 1.5px; margin: 0 0 14px; opacity: 0.7; }
+        .section-divider { border: none; border-top: 1px solid rgba(255,255,255,0.08); margin: 28px 0 22px; }
         .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
         .field { margin-bottom: 15px; }
         label { font-size: 11px; color: #9b96a8; text-transform: uppercase; margin-bottom: 6px; display: block; }
-        input { width: 100%; padding: 12px; background: #161620; border: 1px solid #2a2a3a; border-radius: 10px; color: #fff; box-sizing: border-box; transition: 0.3s; }
+        input { width: 100%; padding: 12px; background: #161620; border: 1px solid #2a2a3a; border-radius: 10px; color: #fff; box-sizing: border-box; transition: 0.3s; font-family: inherit; font-size: 14px; }
         input:focus { border-color: var(--gold); outline: none; }
-        button { width: 100%; padding: 15px; background: var(--gold); border: none; border-radius: 10px; font-weight: bold; cursor: pointer; margin-top: 20px; color: #000; transition: 0.3s; }
+        button { width: 100%; padding: 15px; background: var(--gold); border: none; border-radius: 10px; font-weight: bold; cursor: pointer; margin-top: 20px; color: #000; transition: 0.3s; font-size: 14px; }
         button:hover { background: #fff; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
         #output-container { margin-top: 30px; display: none; }
         #output { background: #000; padding: 20px; border-radius: 10px; border: 1px solid #333; font-family: monospace; font-size: 14px; color: var(--gold); white-space: pre-wrap; overflow-x: auto; margin-bottom: 10px; }
         .copy-btn { background: #222; color: #fff; }
-        #placement-container { margin-top: 20px; display: none; }
-        #placement { background: rgba(212,168,67,0.08); border: 1px solid rgba(212,168,67,0.3); border-radius: 10px; padding: 16px; font-size: 13px; line-height: 1.6; color: var(--text); }
-        #placement code { display: inline-block; background: #000; color: var(--gold); padding: 6px 10px; border-radius: 6px; font-family: monospace; margin-top: 6px; font-size: 12px; }
-        .local-warning { background: rgba(255,77,126,0.1); border: 1px solid rgba(255,77,126,0.35); color: #ff9ab5; border-radius: 10px; padding: 12px 16px; font-size: 12px; margin-bottom: 25px; display: none; }
+        #status-container { margin-top: 20px; display: none; }
+        #status-log { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 16px; font-size: 13px; line-height: 1.7; color: var(--text); font-family: monospace; }
+        #status-log .ok { color: var(--teal); }
+        #status-log .err { color: var(--rose); }
+        #status-log .info { color: var(--text); opacity: 0.75; }
+        .token-note { background: rgba(212,168,67,0.06); border: 1px solid rgba(212,168,67,0.2); color: #c9c4d6; border-radius: 10px; padding: 12px 16px; font-size: 11.5px; line-height: 1.6; margin-bottom: 16px; }
+        .token-note a { color: var(--gold); }
     </style>
 </head>
 <body>
 
 <div class="panel">
     <h2>Xzon3 Admin</h2>
-    <div class="local-warning" id="local-warning">⚠️ এই ফাইলটা লোকাল ফাইল (file://) হিসেবে খোলা আছে। পেজ-প্লেসমেন্ট ঠিকমতো বলতে হলে এটা আপনার লাইভ GitHub Pages সাইট থেকে খুলুন, যেমন: <code>https://username.github.io/repo/admin.html</code></div>
+
+    <h3>GitHub সংযোগ</h3>
+    <div class="token-note">
+        টোকেন কোথাও সেভ হয় না — শুধু এই ট্যাব খোলা থাকা পর্যন্ত মেমোরিতে থাকে, পেজ রিলোড দিলে আবার দিতে হবে।
+        <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">Fine-grained token বানান</a> —
+        শুধু এই রিপোজিটরির জন্য, <b>Contents: Read and write</b> পারমিশন দিয়ে।
+    </div>
+    <div class="grid">
+        <div class="field"><label>Repo Owner</label><input type="text" id="gh-owner" value="xzon3"></div>
+        <div class="field"><label>Repo Name</label><input type="text" id="gh-repo" value="test"></div>
+        <div class="field"><label>Branch</label><input type="text" id="gh-branch" value="main"></div>
+        <div class="field"><label>Personal Access Token</label><input type="password" id="gh-token" placeholder="ghp_... / github_pat_..."></div>
+    </div>
+
+    <hr class="section-divider">
+
+    <h3>নতুন পোস্ট</h3>
     <div class="field"><label>Title (Optional)</label><input type="text" id="title"></div>
     <div class="grid">
         <div class="field"><label>Image URL</label><input type="text" id="image"></div>
@@ -37,7 +59,9 @@
         <div class="field"><label>Duration</label><input type="text" id="duration" placeholder="e.g. 05:30"></div>
         <div class="field"><label>Upload Date</label><input type="datetime-local" id="uploadDate"></div>
     </div>
-    <button onclick="generate()">Generate JSON Data</button>
+
+    <button id="push-btn" onclick="pushToGithub()">🚀 Generate &amp; Push to GitHub</button>
+    <button class="copy-btn" onclick="generateOnly()" style="margin-top:10px;">শুধু JSON তৈরি করো (কপি করার জন্য)</button>
 
     <div id="output-container">
         <label>Generated JSON:</label>
@@ -45,18 +69,13 @@
         <button class="copy-btn" onclick="copyToClipboard()">Copy JSON to Clipboard</button>
     </div>
 
-    <div id="placement-container">
-        <label>কোথায় পেস্ট করবেন:</label>
-        <div id="placement">লোড হচ্ছে...</div>
-        <button class="copy-btn" id="copy-manifest-btn" onclick="copyManifest()" style="display:none;">Copy Updated manifest.json</button>
+    <div id="status-container">
+        <label>স্ট্যাটাস:</label>
+        <div id="status-log"></div>
     </div>
 </div>
 
 <script>
-    if (location.protocol === 'file:') {
-        document.getElementById('local-warning').style.display = 'block';
-    }
-
     (function prefillUploadDate() {
         const d = new Date(Date.now() - new Date().getTimezoneOffset() * 60000);
         document.getElementById('uploadDate').value = d.toISOString().slice(0, 16);
@@ -66,10 +85,8 @@
         let chars = 'abcdefghijklmnopqrstuvwxyz';
         let nums = '0123456789';
         let id = [];
-        // কমপক্ষে দুটি নাম্বার
         id.push(nums[Math.floor(Math.random() * nums.length)]);
         id.push(nums[Math.floor(Math.random() * nums.length)]);
-        // বাকি ৪টি ছোট হাতের অক্ষর বা নাম্বার
         for(let i=0; i<4; i++) {
             let pool = (Math.random() > 0.5) ? chars : nums;
             id.push(pool[Math.floor(Math.random() * pool.length)]);
@@ -77,9 +94,7 @@
         return id.sort(() => Math.random() - 0.5).join('');
     }
 
-    let _pendingManifest = null;
-
-    async function generate() {
+    function buildPostObject() {
         const tasksVal = document.getElementById('tasks').value;
         const dir = tasksVal ? 'tma-posts' : 'web-posts';
         const newId = generateId();
@@ -89,67 +104,168 @@
             image: document.getElementById('image').value,
             targetLink: document.getElementById('link').value
         };
-        if(document.getElementById('title').value) obj.title = document.getElementById('title').value;
-        if(tasksVal) obj.totalTasks = parseInt(tasksVal);
-        if(document.getElementById('duration').value) obj.duration = document.getElementById('duration').value;
+        if (document.getElementById('title').value) obj.title = document.getElementById('title').value;
+        if (tasksVal) obj.totalTasks = parseInt(tasksVal);
+        if (document.getElementById('duration').value) obj.duration = document.getElementById('duration').value;
         const uploadDateVal = document.getElementById('uploadDate').value;
-        if(uploadDateVal) obj.uploadDate = new Date(uploadDateVal).toISOString();
+        if (uploadDateVal) obj.uploadDate = new Date(uploadDateVal).toISOString();
 
-        const jsonStr = JSON.stringify(obj, null, 2);
-        document.getElementById('output').textContent = jsonStr + ",";
-        document.getElementById('output-container').style.display = 'block';
-
-        await showPlacementInstructions(dir, newId);
+        return { obj, dir, newId };
     }
 
-    async function fetchJSON(path) {
-        const res = await fetch(path, { cache: 'no-cache' });
-        if (!res.ok) throw new Error(`HTTP ${res.status} — ${path}`);
+    function showOutput(obj) {
+        document.getElementById('output').textContent = JSON.stringify(obj, null, 2) + ",";
+        document.getElementById('output-container').style.display = 'block';
+    }
+
+    function generateOnly() {
+        const { obj } = buildPostObject();
+        showOutput(obj);
+    }
+
+    /* === Status log === */
+    function resetStatus() {
+        const log = document.getElementById('status-log');
+        log.innerHTML = '';
+        document.getElementById('status-container').style.display = 'block';
+    }
+    function logStatus(msg, cls) {
+        const log = document.getElementById('status-log');
+        const line = document.createElement('div');
+        line.className = cls || 'info';
+        line.textContent = msg;
+        log.appendChild(line);
+    }
+
+    /* === UTF-8 safe base64 helpers (GitHub Contents API needs base64) === */
+    function b64EncodeUnicode(str) {
+        return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g,
+            (match, p1) => String.fromCharCode('0x' + p1)));
+    }
+    function b64DecodeUnicode(str) {
+        return decodeURIComponent(atob(str.replace(/\n/g, '')).split('').map(c =>
+            '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
+        ).join(''));
+    }
+
+    /* === GitHub Contents API === */
+    async function ghGetFile(owner, repo, path, branch, token) {
+        const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${encodeURIComponent(branch)}`, {
+            headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github+json' }
+        });
+        if (res.status === 404) return null;
+        if (!res.ok) throw new Error(`GET ${path} → HTTP ${res.status}: ${(await res.json()).message || res.statusText}`);
+        const data = await res.json();
+        return { sha: data.sha, content: b64DecodeUnicode(data.content) };
+    }
+
+    async function ghPutFile(owner, repo, path, branch, token, content, message, sha) {
+        const body = { message, content: b64EncodeUnicode(content), branch };
+        if (sha) body.sha = sha;
+        const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`, {
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/vnd.github+json',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(body)
+        });
+        if (!res.ok) throw new Error(`PUT ${path} → HTTP ${res.status}: ${(await res.json()).message || res.statusText}`);
         return res.json();
     }
 
-    async function showPlacementInstructions(dir, postId) {
-        const box = document.getElementById('placement');
-        const copyBtn = document.getElementById('copy-manifest-btn');
-        document.getElementById('placement-container').style.display = 'block';
-        copyBtn.style.display = 'none';
-        _pendingManifest = null;
-        box.textContent = 'পেজ তথ্য লোড হচ্ছে...';
+    /* === Main flow: generate post, then write page-N.json + manifest.json directly === */
+    async function pushToGithub() {
+        const owner  = document.getElementById('gh-owner').value.trim();
+        const repo   = document.getElementById('gh-repo').value.trim();
+        const branch = document.getElementById('gh-branch').value.trim() || 'main';
+        const token  = document.getElementById('gh-token').value.trim();
+
+        resetStatus();
+
+        if (!owner || !repo || !token) {
+            logStatus('⚠️ Owner, Repo, আর Token — তিনটাই লাগবে।', 'err');
+            return;
+        }
+
+        const { obj, dir, newId } = buildPostObject();
+        if (!obj.image || !obj.targetLink) {
+            logStatus('⚠️ Image URL আর Target Link অবশ্যই দিতে হবে।', 'err');
+            return;
+        }
+        showOutput(obj);
+
+        const pushBtn = document.getElementById('push-btn');
+        pushBtn.disabled = true;
+        const originalLabel = pushBtn.textContent;
+        pushBtn.textContent = 'পুশ হচ্ছে...';
 
         try {
-            const manifest   = await fetchJSON(`${dir}/manifest.json`);
-            const pageSize   = manifest.pageSize || 20;
-            const totalPages = manifest.totalPages || 0;
-            const postPages  = manifest.postPages || {};
+            const manifestPath = `${dir}/manifest.json`;
+            logStatus(`⏳ ${manifestPath} পড়া হচ্ছে...`, 'info');
+            const manifestFile = await ghGetFile(owner, repo, manifestPath, branch, token);
+            let manifest = manifestFile ? JSON.parse(manifestFile.content) : { totalPages: 0, pageSize: 20, totalPosts: 0, postPages: {} };
+            const pageSize = manifest.pageSize || 20;
+            let totalPages = manifest.totalPages || 0;
+            const postPages = manifest.postPages || {};
+
+            let targetPage, pageFile, posts, isNewPage;
 
             if (totalPages === 0) {
-                _pendingManifest = { totalPages: 1, pageSize, totalPosts: 1, postPages: { ...postPages, [postId]: 1 } };
-                box.innerHTML = `⚠️ <b>${dir}</b>-এ এখনো কোনো পেজ নেই। নতুন ফাইল বানান:<br><code>${dir}/page-1.json</code> → ভেতরে <code>[ &lt;এই পোস্ট&gt; ]</code> (অ্যারের মধ্যে)<br>তারপর নিচের বাটনে ক্লিক করে <code>${dir}/manifest.json</code>-এর পুরো কনটেন্ট কপি করে সেই ফাইলে বসিয়ে দিন।`;
+                targetPage = 1;
+                pageFile = null;
+                posts = [];
+                isNewPage = true;
             } else {
-                const lastPagePosts = await fetchJSON(`${dir}/page-${totalPages}.json`);
-                const currentCount  = Array.isArray(lastPagePosts) ? lastPagePosts.length : 0;
+                targetPage = totalPages;
+                const lastPagePath = `${dir}/page-${targetPage}.json`;
+                logStatus(`⏳ ${lastPagePath} পড়া হচ্ছে...`, 'info');
+                pageFile = await ghGetFile(owner, repo, lastPagePath, branch, token);
+                posts = pageFile ? JSON.parse(pageFile.content) : [];
+                if (!Array.isArray(posts)) posts = [];
 
-                if (currentCount < pageSize) {
-                    const newTotalPosts = (totalPages - 1) * pageSize + currentCount + 1;
-                    _pendingManifest = { totalPages, pageSize, totalPosts: newTotalPosts, postPages: { ...postPages, [postId]: totalPages } };
-                    box.innerHTML = `✅ এই পোস্টটা <code>${dir}/page-${totalPages}.json</code>-এ পেস্ট করুন (এখন ${currentCount}/${pageSize} আছে)।<br>তারপর নিচের বাটনে ক্লিক করে <code>${dir}/manifest.json</code>-এর পুরো কনটেন্ট কপি করে সেই ফাইলে বসিয়ে দিন।`;
+                if (posts.length >= pageSize) {
+                    targetPage = totalPages + 1;
+                    pageFile = null;
+                    posts = [];
+                    isNewPage = true;
                 } else {
-                    const newPage = totalPages + 1;
-                    const newTotalPosts = totalPages * pageSize + 1;
-                    _pendingManifest = { totalPages: newPage, pageSize, totalPosts: newTotalPosts, postPages: { ...postPages, [postId]: newPage } };
-                    box.innerHTML = `📄 <code>${dir}/page-${totalPages}.json</code> ভরে গেছে (${pageSize}/${pageSize})। নতুন ফাইল বানান:<br><code>${dir}/page-${newPage}.json</code> → ভেতরে <code>[ &lt;এই পোস্ট&gt; ]</code><br>তারপর নিচের বাটনে ক্লিক করে <code>${dir}/manifest.json</code>-এর পুরো কনটেন্ট কপি করে সেই ফাইলে বসিয়ে দিন।`;
+                    isNewPage = false;
                 }
             }
-            copyBtn.style.display = 'block';
-        } catch (err) {
-            box.innerHTML = `⚠️ পেজ তথ্য আনতে সমস্যা হয়েছে: ${err.message}<br>এই টুলটা লাইভ সাইট থেকে খুলছেন কিনা আর ${dir}/manifest.json ফাইলটা ঠিকমতো আছে কিনা দেখুন।`;
-        }
-    }
 
-    function copyManifest() {
-        if (!_pendingManifest) return;
-        navigator.clipboard.writeText(JSON.stringify(_pendingManifest, null, 2))
-            .then(() => alert('manifest.json কপি হয়েছে! এখন লক্ষ্যের ফাইলে পেস্ট করে সম্পূর্ণ কনটেন্ট রিপ্লেস করুন।'));
+            posts.push(obj);
+            const pagePath = `${dir}/page-${targetPage}.json`;
+            const pageContent = JSON.stringify(posts, null, 2) + '\n';
+
+            logStatus(`⏳ ${pagePath}-এ পোস্ট "${newId}" যোগ করা হচ্ছে (${posts.length}/${pageSize})...`, 'info');
+            await ghPutFile(owner, repo, pagePath, branch, token, pageContent, `Add post ${newId} to ${pagePath}`, pageFile ? pageFile.sha : undefined);
+            logStatus(`✅ ${pagePath} আপডেট হয়েছে।`, 'ok');
+
+            const newTotalPages = isNewPage ? targetPage : totalPages;
+            const newTotalPosts = (manifest.totalPosts || 0) + 1;
+            const newManifest = {
+                totalPages: newTotalPages,
+                pageSize,
+                totalPosts: newTotalPosts,
+                postPages: { ...postPages, [newId]: targetPage }
+            };
+            const manifestContent = JSON.stringify(newManifest, null, 2) + '\n';
+
+            logStatus(`⏳ ${manifestPath} আপডেট করা হচ্ছে...`, 'info');
+            await ghPutFile(owner, repo, manifestPath, branch, token, manifestContent, `Update manifest for post ${newId}`, manifestFile ? manifestFile.sha : undefined);
+            logStatus(`✅ ${manifestPath} আপডেট হয়েছে।`, 'ok');
+
+            logStatus(`🎉 পোস্ট "${newId}" সফলভাবে পাবলিশ হয়েছে। GitHub Pages রিফ্রেশ হতে ১-২ মিনিট লাগতে পারে।`, 'ok');
+        } catch (err) {
+            console.error(err);
+            logStatus(`❌ ব্যর্থ হয়েছে: ${err.message}`, 'err');
+            logStatus('Owner/Repo/Branch ঠিক আছে কিনা, আর টোকেনে এই রিপোর জন্য "Contents: Read and write" পারমিশন আছে কিনা যাচাই করুন।', 'err');
+        } finally {
+            pushBtn.disabled = false;
+            pushBtn.textContent = originalLabel;
+        }
     }
 
     function copyToClipboard() {
@@ -159,4 +275,3 @@
 </script>
 </body>
 </html>
-  
