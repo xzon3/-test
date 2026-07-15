@@ -28,6 +28,9 @@
         #status-log .info { color: var(--text); opacity: 0.75; }
         .token-note { background: rgba(212,168,67,0.06); border: 1px solid rgba(212,168,67,0.2); color: #c9c4d6; border-radius: 10px; padding: 12px 16px; font-size: 11.5px; line-height: 1.6; margin-bottom: 16px; }
         .token-note a { color: var(--gold); }
+        .checkbox-field { display: flex; align-items: flex-start; }
+        .checkbox-label { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; text-transform: none; color: var(--text); cursor: pointer; line-height: 1.5; }
+        .checkbox-label input[type="checkbox"] { width: auto; margin-top: 2px; flex-shrink: 0; accent-color: var(--gold); }
     </style>
 </head>
 <body>
@@ -55,9 +58,12 @@
     <div class="grid">
         <div class="field"><label>Image URL</label><input type="text" id="image"></div>
         <div class="field"><label>Target Link</label><input type="text" id="link"></div>
-        <div class="field"><label>Task Limit (Leave empty for Web)</label><input type="number" id="tasks"></div>
+        <div class="field"><label>Task Limit (TMA-এর জন্য; নিচের বক্স টিক দিলেও লাগবে)</label><input type="number" id="tasks"></div>
         <div class="field"><label>Duration</label><input type="text" id="duration" placeholder="e.g. 05:30"></div>
         <div class="field"><label>Upload Date</label><input type="datetime-local" id="uploadDate"></div>
+    </div>
+    <div class="field checkbox-field">
+        <label class="checkbox-label"><input type="checkbox" id="both-mode"> TMA + Web — একই কন্টেন্ট দিয়ে দুটোতেই পোস্ট করো (২টা আলাদা আইডি জেনারেট হবে, একটা tma-posts-এ একটা web-posts-এ)</label>
     </div>
 
     <button id="push-btn" onclick="pushToGithub()">🚀 Generate &amp; Push to GitHub</button>
@@ -94,33 +100,47 @@
         return id.sort(() => Math.random() - 0.5).join('');
     }
 
-    function buildPostObject() {
+    /* Builds shared fields once, then returns either one entry (normal mode)
+       or two entries — tma-posts + web-posts, using the SAME id for both
+       (both mode: same content, same id, two directories). */
+    function buildPostObjects() {
+        const bothMode = document.getElementById('both-mode').checked;
         const tasksVal = document.getElementById('tasks').value;
-        const dir = tasksVal ? 'tma-posts' : 'web-posts';
-        const newId = generateId();
-
-        let obj = {
-            id: newId,
-            image: document.getElementById('image').value,
-            targetLink: document.getElementById('link').value
-        };
-        if (document.getElementById('title').value) obj.title = document.getElementById('title').value;
-        if (tasksVal) obj.totalTasks = parseInt(tasksVal);
-        if (document.getElementById('duration').value) obj.duration = document.getElementById('duration').value;
+        const image = document.getElementById('image').value;
+        const targetLink = document.getElementById('link').value;
+        const title = document.getElementById('title').value;
+        const duration = document.getElementById('duration').value;
         const uploadDateVal = document.getElementById('uploadDate').value;
-        if (uploadDateVal) obj.uploadDate = new Date(uploadDateVal).toISOString();
+        const uploadDateISO = uploadDateVal ? new Date(uploadDateVal).toISOString() : null;
+        const sharedId = generateId();
 
-        return { obj, dir, newId };
+        function makeObj(withTasks) {
+            let obj = { id: sharedId, image, targetLink };
+            if (title) obj.title = title;
+            if (withTasks && tasksVal) obj.totalTasks = parseInt(tasksVal);
+            if (duration) obj.duration = duration;
+            if (uploadDateISO) obj.uploadDate = uploadDateISO;
+            return obj;
+        }
+
+        if (bothMode) {
+            return [
+                { obj: makeObj(true), dir: 'tma-posts' },
+                { obj: makeObj(false), dir: 'web-posts' }
+            ];
+        }
+        const dir = tasksVal ? 'tma-posts' : 'web-posts';
+        return [{ obj: makeObj(!!tasksVal), dir }];
     }
 
-    function showOutput(obj) {
-        document.getElementById('output').textContent = JSON.stringify(obj, null, 2) + ",";
+    function showOutput(entries) {
+        const parts = entries.map(e => `// ${e.dir}\n` + JSON.stringify(e.obj, null, 2) + ",");
+        document.getElementById('output').textContent = parts.join('\n\n');
         document.getElementById('output-container').style.display = 'block';
     }
 
     function generateOnly() {
-        const { obj } = buildPostObject();
-        showOutput(obj);
+        showOutput(buildPostObjects());
     }
 
     /* === Status log === */
@@ -175,12 +195,75 @@
         return res.json();
     }
 
-    /* === Main flow: generate post, then write page-N.json + manifest.json directly === */
+    /* Pushes a single post object into a single directory's manifest.json + page-N.json.
+       Used once (normal mode) or twice back-to-back (both mode). */
+    async function pushOneDirectory(owner, repo, branch, token, dir, obj) {
+        const tag = `[${dir}]`;
+        const manifestPath = `${dir}/manifest.json`;
+        logStatus(`⏳ ${tag} ${manifestPath} পড়া হচ্ছে...`, 'info');
+        const manifestFile = await ghGetFile(owner, repo, manifestPath, branch, token);
+        let manifest = manifestFile ? JSON.parse(manifestFile.content) : { totalPages: 0, pageSize: 20, totalPosts: 0, postPages: {} };
+        const pageSize = manifest.pageSize || 20;
+        let totalPages = manifest.totalPages || 0;
+        const postPages = manifest.postPages || {};
+
+        let targetPage, pageFile, posts, isNewPage;
+
+        if (totalPages === 0) {
+            targetPage = 1;
+            pageFile = null;
+            posts = [];
+            isNewPage = true;
+        } else {
+            targetPage = totalPages;
+            const lastPagePath = `${dir}/page-${targetPage}.json`;
+            logStatus(`⏳ ${tag} ${lastPagePath} পড়া হচ্ছে...`, 'info');
+            pageFile = await ghGetFile(owner, repo, lastPagePath, branch, token);
+            posts = pageFile ? JSON.parse(pageFile.content) : [];
+            if (!Array.isArray(posts)) posts = [];
+
+            if (posts.length >= pageSize) {
+                targetPage = totalPages + 1;
+                pageFile = null;
+                posts = [];
+                isNewPage = true;
+            } else {
+                isNewPage = false;
+            }
+        }
+
+        posts.push(obj);
+        const pagePath = `${dir}/page-${targetPage}.json`;
+        const pageContent = JSON.stringify(posts, null, 2) + '\n';
+
+        logStatus(`⏳ ${tag} ${pagePath}-এ পোস্ট "${obj.id}" যোগ করা হচ্ছে (${posts.length}/${pageSize})...`, 'info');
+        await ghPutFile(owner, repo, pagePath, branch, token, pageContent, `Add post ${obj.id} to ${pagePath}`, pageFile ? pageFile.sha : undefined);
+        logStatus(`✅ ${tag} ${pagePath} আপডেট হয়েছে।`, 'ok');
+
+        const newTotalPages = isNewPage ? targetPage : totalPages;
+        const newTotalPosts = (manifest.totalPosts || 0) + 1;
+        const newManifest = {
+            totalPages: newTotalPages,
+            pageSize,
+            totalPosts: newTotalPosts,
+            postPages: { ...postPages, [obj.id]: targetPage }
+        };
+        const manifestContent = JSON.stringify(newManifest, null, 2) + '\n';
+
+        logStatus(`⏳ ${tag} ${manifestPath} আপডেট করা হচ্ছে...`, 'info');
+        await ghPutFile(owner, repo, manifestPath, branch, token, manifestContent, `Update manifest for post ${obj.id}`, manifestFile ? manifestFile.sha : undefined);
+        logStatus(`✅ ${tag} ${manifestPath} আপডেট হয়েছে।`, 'ok');
+        logStatus(`🎉 ${tag} পোস্ট "${obj.id}" পাবলিশ হয়েছে।`, 'ok');
+    }
+
+    /* === Main flow: generate one or two post objects, push each directory in turn === */
     async function pushToGithub() {
         const owner  = document.getElementById('gh-owner').value.trim();
         const repo   = document.getElementById('gh-repo').value.trim();
         const branch = document.getElementById('gh-branch').value.trim() || 'main';
         const token  = document.getElementById('gh-token').value.trim();
+        const bothMode = document.getElementById('both-mode').checked;
+        const tasksVal = document.getElementById('tasks').value;
 
         resetStatus();
 
@@ -188,84 +271,42 @@
             logStatus('⚠️ Owner, Repo, আর Token — তিনটাই লাগবে।', 'err');
             return;
         }
+        if (bothMode && !tasksVal) {
+            logStatus('⚠️ উভয় মোডে পোস্ট করতে হলে Task Limit দিতে হবে (TMA কপির জন্য) — খালি রাখলে চলবে না।', 'err');
+            return;
+        }
 
-        const { obj, dir, newId } = buildPostObject();
-        if (!obj.image || !obj.targetLink) {
+        const entries = buildPostObjects();
+        if (!entries[0].obj.image || !entries[0].obj.targetLink) {
             logStatus('⚠️ Image URL আর Target Link অবশ্যই দিতে হবে।', 'err');
             return;
         }
-        showOutput(obj);
+        showOutput(entries);
 
         const pushBtn = document.getElementById('push-btn');
         pushBtn.disabled = true;
         const originalLabel = pushBtn.textContent;
         pushBtn.textContent = 'পুশ হচ্ছে...';
 
-        try {
-            const manifestPath = `${dir}/manifest.json`;
-            logStatus(`⏳ ${manifestPath} পড়া হচ্ছে...`, 'info');
-            const manifestFile = await ghGetFile(owner, repo, manifestPath, branch, token);
-            let manifest = manifestFile ? JSON.parse(manifestFile.content) : { totalPages: 0, pageSize: 20, totalPosts: 0, postPages: {} };
-            const pageSize = manifest.pageSize || 20;
-            let totalPages = manifest.totalPages || 0;
-            const postPages = manifest.postPages || {};
-
-            let targetPage, pageFile, posts, isNewPage;
-
-            if (totalPages === 0) {
-                targetPage = 1;
-                pageFile = null;
-                posts = [];
-                isNewPage = true;
-            } else {
-                targetPage = totalPages;
-                const lastPagePath = `${dir}/page-${targetPage}.json`;
-                logStatus(`⏳ ${lastPagePath} পড়া হচ্ছে...`, 'info');
-                pageFile = await ghGetFile(owner, repo, lastPagePath, branch, token);
-                posts = pageFile ? JSON.parse(pageFile.content) : [];
-                if (!Array.isArray(posts)) posts = [];
-
-                if (posts.length >= pageSize) {
-                    targetPage = totalPages + 1;
-                    pageFile = null;
-                    posts = [];
-                    isNewPage = true;
-                } else {
-                    isNewPage = false;
-                }
+        let anyFail = false;
+        for (const entry of entries) {
+            try {
+                await pushOneDirectory(owner, repo, branch, token, entry.dir, entry.obj);
+            } catch (err) {
+                anyFail = true;
+                console.error(err);
+                logStatus(`❌ [${entry.dir}] ব্যর্থ হয়েছে: ${err.message}`, 'err');
             }
-
-            posts.push(obj);
-            const pagePath = `${dir}/page-${targetPage}.json`;
-            const pageContent = JSON.stringify(posts, null, 2) + '\n';
-
-            logStatus(`⏳ ${pagePath}-এ পোস্ট "${newId}" যোগ করা হচ্ছে (${posts.length}/${pageSize})...`, 'info');
-            await ghPutFile(owner, repo, pagePath, branch, token, pageContent, `Add post ${newId} to ${pagePath}`, pageFile ? pageFile.sha : undefined);
-            logStatus(`✅ ${pagePath} আপডেট হয়েছে।`, 'ok');
-
-            const newTotalPages = isNewPage ? targetPage : totalPages;
-            const newTotalPosts = (manifest.totalPosts || 0) + 1;
-            const newManifest = {
-                totalPages: newTotalPages,
-                pageSize,
-                totalPosts: newTotalPosts,
-                postPages: { ...postPages, [newId]: targetPage }
-            };
-            const manifestContent = JSON.stringify(newManifest, null, 2) + '\n';
-
-            logStatus(`⏳ ${manifestPath} আপডেট করা হচ্ছে...`, 'info');
-            await ghPutFile(owner, repo, manifestPath, branch, token, manifestContent, `Update manifest for post ${newId}`, manifestFile ? manifestFile.sha : undefined);
-            logStatus(`✅ ${manifestPath} আপডেট হয়েছে।`, 'ok');
-
-            logStatus(`🎉 পোস্ট "${newId}" সফলভাবে পাবলিশ হয়েছে। GitHub Pages রিফ্রেশ হতে ১-২ মিনিট লাগতে পারে।`, 'ok');
-        } catch (err) {
-            console.error(err);
-            logStatus(`❌ ব্যর্থ হয়েছে: ${err.message}`, 'err');
-            logStatus('Owner/Repo/Branch ঠিক আছে কিনা, আর টোকেনে এই রিপোর জন্য "Contents: Read and write" পারমিশন আছে কিনা যাচাই করুন।', 'err');
-        } finally {
-            pushBtn.disabled = false;
-            pushBtn.textContent = originalLabel;
         }
+
+        if (anyFail) {
+            logStatus('Owner/Repo/Branch ঠিক আছে কিনা, আর টোকেনে এই রিপোর জন্য "Contents: Read and write" পারমিশন আছে কিনা যাচাই করুন।', 'err');
+        } else {
+            logStatus(`✨ সবগুলো পোস্ট সফলভাবে পাবলিশ হয়েছে। GitHub Pages রিফ্রেশ হতে ১-২ মিনিট লাগতে পারে।`, 'ok');
+        }
+
+        pushBtn.disabled = false;
+        pushBtn.textContent = originalLabel;
     }
 
     function copyToClipboard() {
