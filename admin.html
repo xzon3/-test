@@ -32,6 +32,17 @@
         .checkbox-label { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; text-transform: none; color: var(--text); cursor: pointer; line-height: 1.5; }
         .checkbox-label input[type="checkbox"] { width: auto; margin-top: 2px; flex-shrink: 0; accent-color: var(--gold); }
 
+        .image-input-row { display: flex; gap: 8px; }
+        .image-input-row input[type="text"] { flex: 1; }
+        .upload-icon-btn { width: auto; flex-shrink: 0; margin: 0; padding: 0 16px; background: #222; color: var(--gold); border-radius: 10px; font-size: 16px; }
+        .upload-icon-btn:hover { background: #2a2a3a; }
+        .upload-icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .upload-status { font-size: 11px; margin-top: 6px; min-height: 14px; line-height: 1.5; }
+        .upload-status.info { color: var(--text-secondary, #9b96a8); }
+        .upload-status.ok { color: var(--teal); }
+        .upload-status.err { color: var(--rose); }
+        #image-preview { margin-top: 8px; max-width: 110px; max-height: 82px; border-radius: 8px; border: 1px solid #2a2a3a; object-fit: cover; display: none; }
+
         .list-btn { background: #222; color: #fff; }
         #post-list-container { margin-top: 16px; }
         .post-list-group { margin-bottom: 22px; }
@@ -81,7 +92,16 @@
     <h3>নতুন পোস্ট</h3>
     <div class="field"><label>Title (Optional)</label><input type="text" id="title"></div>
     <div class="grid">
-        <div class="field"><label>Image URL</label><input type="text" id="image"></div>
+        <div class="field">
+            <label>Image URL</label>
+            <div class="image-input-row">
+                <input type="text" id="image" oninput="updateImagePreview()">
+                <button type="button" class="upload-icon-btn" id="image-upload-btn" onclick="document.getElementById('image-file').click()" title="ছবি আপলোড করো">📤</button>
+            </div>
+            <input type="file" id="image-file" accept="image/*" style="display:none;" onchange="handleImageFileSelect(event)">
+            <div id="image-upload-status" class="upload-status"></div>
+            <img id="image-preview" alt="preview">
+        </div>
         <div class="field"><label>Target Link</label><input type="text" id="link"></div>
         <div class="field"><label>Task Limit (TMA-এর জন্য; নিচের বক্স টিক দিলেও লাগবে)</label><input type="number" id="tasks"></div>
         <div class="field"><label>Duration</label><input type="text" id="duration" placeholder="e.g. 05:30"></div>
@@ -145,6 +165,89 @@
             id.push(pool[Math.floor(Math.random() * pool.length)]);
         }
         return id.sort(() => Math.random() - 0.5).join('');
+    }
+
+    /* === Direct image upload (commits the file straight into the repo's /images/ folder) === */
+    function randomFileToken() {
+        const pool = 'abcdefghijklmnopqrstuvwxyz0123456789';
+        let s = '';
+        for (let i = 0; i < 8; i++) s += pool[Math.floor(Math.random() * pool.length)];
+        return s;
+    }
+
+    function readFileAsBase64(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+            reader.onerror = () => reject(new Error('ফাইল পড়া যায়নি।'));
+            reader.readAsDataURL(file);
+        });
+    }
+
+    function updateImagePreview() {
+        const url = document.getElementById('image').value.trim();
+        const previewEl = document.getElementById('image-preview');
+        if (url) {
+            previewEl.src = url;
+            previewEl.style.display = 'block';
+        } else {
+            previewEl.style.display = 'none';
+            previewEl.removeAttribute('src');
+        }
+    }
+
+    async function handleImageFileSelect(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        const fileInput = e.target;
+        const statusEl = document.getElementById('image-upload-status');
+        const uploadBtn = document.getElementById('image-upload-btn');
+
+        const { owner, repo, branch, token } = getGithubCreds();
+        if (!owner || !repo || !token) {
+            alert('আগে Owner, Repo, আর Token দাও।');
+            fileInput.value = '';
+            return;
+        }
+        if (!file.type.startsWith('image/')) {
+            statusEl.textContent = '⚠️ শুধু ছবি ফাইল (jpg/png/webp) আপলোড করা যাবে।';
+            statusEl.className = 'upload-status err';
+            fileInput.value = '';
+            return;
+        }
+        const MAX_BYTES = 5 * 1024 * 1024;
+        if (file.size > MAX_BYTES) {
+            statusEl.textContent = `⚠️ ছবিটা অনেক বড় (${(file.size / 1024 / 1024).toFixed(1)}MB) — ৫MB-এর কম সাইজের ছবি দাও, দরকার হলে কমপ্রেস/রিসাইজ করে নাও।`;
+            statusEl.className = 'upload-status err';
+            fileInput.value = '';
+            return;
+        }
+
+        uploadBtn.disabled = true;
+        statusEl.textContent = '⏳ আপলোড হচ্ছে...';
+        statusEl.className = 'upload-status info';
+
+        try {
+            const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+            const filename = `${Date.now().toString(36)}-${randomFileToken()}.${ext}`;
+            const path = `images/${filename}`;
+            const base64Content = await readFileAsBase64(file);
+
+            await ghPutFileRaw(owner, repo, path, branch, token, base64Content, `Upload image ${filename}`);
+
+            const imageURL = `https://${owner.toLowerCase()}.github.io/${repo}/${path}`;
+            document.getElementById('image').value = imageURL;
+            updateImagePreview();
+            statusEl.textContent = '✅ আপলোড সফল, Image URL ফিল্ড পূরণ হয়ে গেছে। (GitHub Pages-এ দেখা যেতে ১-২ মিনিট লাগতে পারে।)';
+            statusEl.className = 'upload-status ok';
+        } catch (err) {
+            console.error(err);
+            statusEl.textContent = `❌ আপলোড ব্যর্থ: ${err.message}`;
+            statusEl.className = 'upload-status err';
+        } finally {
+            uploadBtn.disabled = false;
+            fileInput.value = '';
+        }
     }
 
     /* Builds shared fields once, then returns either one entry (normal mode)
@@ -237,6 +340,22 @@
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify(body)
+        });
+        if (!res.ok) throw new Error(`PUT ${path} → HTTP ${res.status}: ${(await res.json()).message || res.statusText}`);
+        return res.json();
+    }
+
+    /* Same PUT as above but for content that's already base64-encoded binary data
+       (images) — skips the UTF-8 text encoding step so bytes aren't corrupted. */
+    async function ghPutFileRaw(owner, repo, path, branch, token, base64Content, message) {
+        const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`, {
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/vnd.github+json',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ message, content: base64Content, branch })
         });
         if (!res.ok) throw new Error(`PUT ${path} → HTTP ${res.status}: ${(await res.json()).message || res.statusText}`);
         return res.json();
@@ -449,6 +568,7 @@
 
         document.getElementById('title').value = post.title || '';
         document.getElementById('image').value = post.image || '';
+        updateImagePreview();
         document.getElementById('link').value = post.targetLink || '';
         document.getElementById('tasks').value = post.totalTasks || '';
         document.getElementById('duration').value = post.duration || '';
@@ -478,6 +598,8 @@
         document.getElementById('push-btn').textContent = '🚀 Generate & Push to GitHub';
         document.getElementById('generate-only-btn').style.display = 'block';
         ['title', 'image', 'link', 'tasks', 'duration'].forEach(id => document.getElementById(id).value = '');
+        updateImagePreview();
+        document.getElementById('image-upload-status').textContent = '';
     }
 
     async function saveEditedPost() {
