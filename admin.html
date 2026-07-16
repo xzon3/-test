@@ -133,6 +133,12 @@
         <button class="list-btn" id="btn-web-posts" style="margin-top:0;" onclick="loadPostList('web-posts')">Web পোস্ট লোড করো</button>
     </div>
     <div id="post-list-container"></div>
+
+    <hr class="section-divider">
+
+    <h3>ছবি ম্যানেজ করো (images/ ফোল্ডার)</h3>
+    <button class="list-btn" id="btn-images" style="margin-top:0;" onclick="loadImageList()">ছবি লোড করো</button>
+    <div id="image-list-container" style="margin-top:16px;"></div>
 </div>
 
 <script>
@@ -249,6 +255,113 @@
             fileInput.value = '';
         }
     }
+
+    /* === Manage images/ folder: list files, delete one === */
+    let _loadedImages = null;   // null = not loaded, [] = loaded but empty, [...] = loaded
+    let _imagesLoading = false;
+
+    async function ghListDir(owner, repo, path, branch, token) {
+        const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${encodeURIComponent(branch)}`, {
+            headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github+json' }
+        });
+        if (res.status === 404) return [];
+        if (!res.ok) throw new Error(`GET ${path} → HTTP ${res.status}: ${(await res.json()).message || res.statusText}`);
+        const data = await res.json();
+        return Array.isArray(data) ? data : [];
+    }
+
+    async function ghDeleteFile(owner, repo, path, branch, token, sha, message) {
+        const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/vnd.github+json',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ message, sha, branch })
+        });
+        if (!res.ok) throw new Error(`DELETE ${path} → HTTP ${res.status}: ${(await res.json()).message || res.statusText}`);
+        return res.json();
+    }
+
+    function updateImagesButtonLabel() {
+        const btn = document.getElementById('btn-images');
+        if (!btn) return;
+        btn.textContent = _loadedImages !== null ? '✕ ছবি সরাও' : 'ছবি লোড করো';
+    }
+
+    function renderImageList() {
+        const container = document.getElementById('image-list-container');
+        if (_imagesLoading) { container.innerHTML = `<div class="empty-hint">⏳ লোড হচ্ছে...</div>`; return; }
+        if (_loadedImages === null) { container.innerHTML = ''; return; }
+        if (_loadedImages.length === 0) { container.innerHTML = `<div class="empty-hint">images/ ফোল্ডারে কোনো ছবি নেই।</div>`; return; }
+
+        const cards = _loadedImages.map(f => `
+            <div class="grid-card">
+                <div class="grid-thumb"><img src="${escapeHTML(f.download_url)}" onerror="this.style.opacity=0.15" /></div>
+                <div class="grid-body">
+                    <div class="grid-title">${escapeHTML(f.name)}</div>
+                    <div class="grid-meta">${(f.size / 1024).toFixed(0)} KB</div>
+                    <div class="grid-actions">
+                        <button class="grid-btn danger" data-action="delete-image" data-path="${escapeHTML(f.path)}" data-sha="${escapeHTML(f.sha)}" data-name="${escapeHTML(f.name)}">Del</button>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+        container.innerHTML = `<div class="post-grid">${cards}</div>`;
+    }
+
+    async function loadImageList() {
+        if (_loadedImages !== null) {
+            _loadedImages = null;
+            renderImageList();
+            updateImagesButtonLabel();
+            return;
+        }
+        const { owner, repo, branch, token } = getGithubCreds();
+        if (!owner || !repo || !token) {
+            alert('আগে Owner, Repo, আর Token দাও।');
+            return;
+        }
+        _imagesLoading = true;
+        renderImageList();
+        try {
+            const files = await ghListDir(owner, repo, 'images', branch, token);
+            _loadedImages = files.filter(f => f.type === 'file').sort((a, b) => b.name.localeCompare(a.name));
+        } catch (err) {
+            console.error(err);
+            _loadedImages = [];
+            alert(`ছবি লোড ব্যর্থ হয়েছে: ${err.message}`);
+        } finally {
+            _imagesLoading = false;
+            updateImagesButtonLabel();
+            renderImageList();
+        }
+    }
+
+    async function deleteImage(path, sha, name) {
+        const { owner, repo, branch, token } = getGithubCreds();
+        if (!owner || !repo || !token) {
+            alert('আগে Owner, Repo, আর Token দাও।');
+            return;
+        }
+        const ok = confirm(`"${name}" ডিলিট করবে? মনে রেখো — কোনো পোস্ট এই ছবিটা ব্যবহার করলে সেই পোস্টের থাম্বনেইল ভেঙে যাবে। এটা ফেরানো যাবে না।`);
+        if (!ok) return;
+
+        try {
+            await ghDeleteFile(owner, repo, path, branch, token, sha, `Delete image ${name}`);
+            _loadedImages = _loadedImages.filter(f => f.path !== path);
+            renderImageList();
+        } catch (err) {
+            console.error(err);
+            alert(`ডিলিট ব্যর্থ হয়েছে: ${err.message}`);
+        }
+    }
+
+    document.getElementById('image-list-container').addEventListener('click', (e) => {
+        const delBtn = e.target.closest('[data-action="delete-image"]');
+        if (delBtn) deleteImage(delBtn.dataset.path, delBtn.dataset.sha, delBtn.dataset.name);
+    });
 
     /* Builds shared fields once, then returns either one entry (normal mode)
        or two entries — tma-posts + web-posts, using the SAME id for both
