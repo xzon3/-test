@@ -109,8 +109,8 @@
 
     <h3>পুরনো পোস্ট ম্যানেজ করো</h3>
     <div class="grid">
-        <button class="list-btn" style="margin-top:0;" onclick="loadPostList('tma-posts')">TMA পোস্ট লোড করো</button>
-        <button class="list-btn" style="margin-top:0;" onclick="loadPostList('web-posts')">Web পোস্ট লোড করো</button>
+        <button class="list-btn" id="btn-tma-posts" style="margin-top:0;" onclick="loadPostList('tma-posts')">TMA পোস্ট লোড করো</button>
+        <button class="list-btn" id="btn-web-posts" style="margin-top:0;" onclick="loadPostList('web-posts')">Web পোস্ট লোড করো</button>
     </div>
     <div id="post-list-container"></div>
 </div>
@@ -313,7 +313,27 @@
         };
     }
 
+    const LIST_BTN_IDS = { 'tma-posts': 'btn-tma-posts', 'web-posts': 'btn-web-posts' };
+    const LIST_BTN_LABELS = { 'tma-posts': 'TMA পোস্ট', 'web-posts': 'Web পোস্ট' };
+
+    function updateListButtonLabel(dir) {
+        const btn = document.getElementById(LIST_BTN_IDS[dir]);
+        if (!btn) return;
+        const isShown = _loadedPosts.hasOwnProperty(dir);
+        btn.textContent = isShown ? `✕ ${LIST_BTN_LABELS[dir]} সরাও` : `${LIST_BTN_LABELS[dir]} লোড করো`;
+    }
+
     async function loadPostList(dir) {
+        // Toggle off: if this directory's posts are already showing, clicking again clears them.
+        if (_loadedPosts.hasOwnProperty(dir)) {
+            delete _loadedPosts[dir];
+            delete _listState[dir];
+            if (_editState && _editState.dir === dir) cancelEdit();
+            renderAllLoadedLists();
+            updateListButtonLabel(dir);
+            return;
+        }
+
         const { owner, repo, branch, token } = getGithubCreds();
         if (!owner || !repo || !token) {
             alert('আগে Owner, Repo, আর Token দাও।');
@@ -321,15 +341,15 @@
         }
 
         _loadedPosts[dir] = [];
-        _listState[dir] = { totalPages: 0, pagesLoaded: 0, loading: false };
-
-        const container = document.getElementById('post-list-container');
-        container.innerHTML = `<div class="empty-hint">⏳ ${dir} manifest পড়া হচ্ছে...</div>`;
+        _listState[dir] = { totalPages: 0, pagesLoaded: 0, loading: true };
+        updateListButtonLabel(dir);
+        renderAllLoadedLists();
 
         try {
             const manifestFile = await ghGetFile(owner, repo, `${dir}/manifest.json`, branch, token);
             const manifest = manifestFile ? JSON.parse(manifestFile.content) : { totalPages: 0 };
             _listState[dir].totalPages = manifest.totalPages || 0;
+            _listState[dir].loading = false;
 
             if (_listState[dir].totalPages === 0) {
                 renderAllLoadedLists();
@@ -338,7 +358,11 @@
             await loadNextListPage(dir);
         } catch (err) {
             console.error(err);
-            container.innerHTML = `<div class="empty-hint">❌ লোড ব্যর্থ: ${escapeHTML(err.message)}</div>`;
+            delete _loadedPosts[dir];
+            delete _listState[dir];
+            updateListButtonLabel(dir);
+            renderAllLoadedLists();
+            alert(`${dir} লোড ব্যর্থ হয়েছে: ${err.message}`);
         }
     }
 
@@ -377,6 +401,9 @@
             const posts = _loadedPosts[dir];
             const state = _listState[dir] || { totalPages: 0, pagesLoaded: 0, loading: false };
 
+            if (state.loading && posts.length === 0) {
+                return `<div class="post-list-group"><div class="post-list-group-title">${dir}</div><div class="empty-hint">⏳ লোড হচ্ছে...</div></div>`;
+            }
             if (posts.length === 0 && state.pagesLoaded >= state.totalPages) {
                 return `<div class="post-list-group"><div class="post-list-group-title">${dir} (0)</div><div class="empty-hint">কোনো পোস্ট নেই।</div></div>`;
             }
