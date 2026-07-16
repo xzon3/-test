@@ -31,6 +31,22 @@
         .checkbox-field { display: flex; align-items: flex-start; }
         .checkbox-label { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; text-transform: none; color: var(--text); cursor: pointer; line-height: 1.5; }
         .checkbox-label input[type="checkbox"] { width: auto; margin-top: 2px; flex-shrink: 0; accent-color: var(--gold); }
+
+        .list-btn { background: #222; color: #fff; }
+        #post-list-container { margin-top: 16px; }
+        .post-list-group { margin-bottom: 18px; }
+        .post-list-group-title { font-size: 11px; color: #9b96a8; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+        .post-row { display: flex; align-items: center; gap: 12px; background: #12121a; border: 1px solid #24242f; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+        .post-row-thumb { width: 46px; height: 46px; object-fit: cover; border-radius: 6px; flex-shrink: 0; background: #222; }
+        .post-row-info { flex: 1; min-width: 0; }
+        .post-row-title { font-size: 13px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .post-row-meta { font-size: 10.5px; color: #8a8596; margin-top: 2px; }
+        .row-btn { width: auto; padding: 8px 12px; margin: 0 0 0 6px; font-size: 12px; border-radius: 8px; }
+        .row-btn.edit-btn { background: #2a2a3a; color: var(--gold); }
+        .row-btn.danger { background: rgba(255,77,126,0.12); color: var(--rose); }
+        .edit-banner { display: none; align-items: center; justify-content: space-between; gap: 10px; background: rgba(212,168,67,0.1); border: 1px solid rgba(212,168,67,0.35); border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; font-size: 12.5px; color: var(--gold); }
+        .edit-banner button { width: auto; margin: 0; padding: 6px 12px; font-size: 11px; background: transparent; border: 1px solid rgba(212,168,67,0.5); color: var(--gold); }
+        .empty-hint { font-size: 12px; color: #7a7588; padding: 8px 0; }
     </style>
 </head>
 <body>
@@ -53,6 +69,11 @@
 
     <hr class="section-divider">
 
+    <div id="edit-banner" class="edit-banner">
+        <span id="edit-banner-text"></span>
+        <button onclick="cancelEdit()">✕ বাতিল করো</button>
+    </div>
+
     <h3>নতুন পোস্ট</h3>
     <div class="field"><label>Title (Optional)</label><input type="text" id="title"></div>
     <div class="grid">
@@ -63,11 +84,11 @@
         <div class="field"><label>Upload Date</label><input type="datetime-local" id="uploadDate"></div>
     </div>
     <div class="field checkbox-field">
-        <label class="checkbox-label"><input type="checkbox" id="both-mode"> TMA + Web — একই কন্টেন্ট দিয়ে দুটোতেই পোস্ট করো (২টা আলাদা আইডি জেনারেট হবে, একটা tma-posts-এ একটা web-posts-এ)</label>
+        <label class="checkbox-label"><input type="checkbox" id="both-mode"> TMA + Web — একই কন্টেন্ট এবং একই আইডি দিয়ে দুটোতেই পোস্ট করো (একটা tma-posts-এ, একটা web-posts-এ)</label>
     </div>
 
     <button id="push-btn" onclick="pushToGithub()">🚀 Generate &amp; Push to GitHub</button>
-    <button class="copy-btn" onclick="generateOnly()" style="margin-top:10px;">শুধু JSON তৈরি করো (কপি করার জন্য)</button>
+    <button class="copy-btn" id="generate-only-btn" onclick="generateOnly()" style="margin-top:10px;">শুধু JSON তৈরি করো (কপি করার জন্য)</button>
 
     <div id="output-container">
         <label>Generated JSON:</label>
@@ -79,6 +100,15 @@
         <label>স্ট্যাটাস:</label>
         <div id="status-log"></div>
     </div>
+
+    <hr class="section-divider">
+
+    <h3>পুরনো পোস্ট ম্যানেজ করো</h3>
+    <div class="grid">
+        <button class="list-btn" style="margin-top:0;" onclick="loadPostList('tma-posts')">TMA পোস্ট লোড করো</button>
+        <button class="list-btn" style="margin-top:0;" onclick="loadPostList('web-posts')">Web পোস্ট লোড করো</button>
+    </div>
+    <div id="post-list-container"></div>
 </div>
 
 <script>
@@ -86,6 +116,18 @@
         const d = new Date(Date.now() - new Date().getTimezoneOffset() * 60000);
         document.getElementById('uploadDate').value = d.toISOString().slice(0, 16);
     })();
+
+    /* === Edit/Delete state === */
+    let _editState = null;              // { dir, id, page } while editing an existing post
+    let _loadedPosts = {};               // { 'tma-posts': [...], 'web-posts': [...] } — cached list, each post tagged with _page
+
+    function escapeHTML(str) {
+        return String(str == null ? '' : str)
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
 
     function generateId() {
         let chars = 'abcdefghijklmnopqrstuvwxyz';
@@ -195,6 +237,22 @@
         return res.json();
     }
 
+    async function ghListPosts(owner, repo, branch, token, dir) {
+        const manifestFile = await ghGetFile(owner, repo, `${dir}/manifest.json`, branch, token);
+        if (!manifestFile) return [];
+        const manifest = JSON.parse(manifestFile.content);
+        const totalPages = manifest.totalPages || 0;
+        let all = [];
+        for (let p = 1; p <= totalPages; p++) {
+            const pageFile = await ghGetFile(owner, repo, `${dir}/page-${p}.json`, branch, token);
+            const posts = pageFile ? JSON.parse(pageFile.content) : [];
+            if (Array.isArray(posts)) {
+                posts.forEach(post => all.push({ ...post, _page: p }));
+            }
+        }
+        return all;
+    }
+
     /* Pushes a single post object into a single directory's manifest.json + page-N.json.
        Used once (normal mode) or twice back-to-back (both mode). */
     async function pushOneDirectory(owner, repo, branch, token, dir, obj) {
@@ -256,8 +314,234 @@
         logStatus(`🎉 ${tag} পোস্ট "${obj.id}" পাবলিশ হয়েছে।`, 'ok');
     }
 
+    /* === Load / render post list for management === */
+    function getGithubCreds() {
+        return {
+            owner: document.getElementById('gh-owner').value.trim(),
+            repo: document.getElementById('gh-repo').value.trim(),
+            branch: document.getElementById('gh-branch').value.trim() || 'main',
+            token: document.getElementById('gh-token').value.trim()
+        };
+    }
+
+    async function loadPostList(dir) {
+        const { owner, repo, branch, token } = getGithubCreds();
+        if (!owner || !repo || !token) {
+            alert('আগে Owner, Repo, আর Token দাও।');
+            return;
+        }
+        const container = document.getElementById('post-list-container');
+        container.innerHTML = `<div class="empty-hint">⏳ ${dir} লোড হচ্ছে...</div>`;
+        try {
+            const posts = await ghListPosts(owner, repo, branch, token, dir);
+            _loadedPosts[dir] = posts;
+            renderAllLoadedLists();
+        } catch (err) {
+            console.error(err);
+            container.innerHTML = `<div class="empty-hint">❌ লোড ব্যর্থ: ${escapeHTML(err.message)}</div>`;
+        }
+    }
+
+    function renderAllLoadedLists() {
+        const container = document.getElementById('post-list-container');
+        const dirs = Object.keys(_loadedPosts);
+        if (dirs.length === 0) { container.innerHTML = ''; return; }
+
+        container.innerHTML = dirs.map(dir => {
+            const posts = _loadedPosts[dir];
+            if (posts.length === 0) {
+                return `<div class="post-list-group"><div class="post-list-group-title">${dir} (0)</div><div class="empty-hint">কোনো পোস্ট নেই।</div></div>`;
+            }
+            const rows = posts.map(p => `
+                <div class="post-row">
+                    <img class="post-row-thumb" src="${escapeHTML(p.image)}" onerror="this.style.opacity=0.2" />
+                    <div class="post-row-info">
+                        <div class="post-row-title">${escapeHTML(p.title || '(No title)')}</div>
+                        <div class="post-row-meta">ID: ${escapeHTML(p.id)} · Page ${p._page}${p.totalTasks ? ' · Tasks: ' + p.totalTasks : ''}</div>
+                    </div>
+                    <button class="row-btn edit-btn" data-action="edit" data-dir="${escapeHTML(dir)}" data-id="${escapeHTML(p.id)}">Edit</button>
+                    <button class="row-btn danger" data-action="delete" data-dir="${escapeHTML(dir)}" data-id="${escapeHTML(p.id)}">Delete</button>
+                </div>
+            `).join('');
+            return `<div class="post-list-group"><div class="post-list-group-title">${dir} (${posts.length})</div>${rows}</div>`;
+        }).join('');
+    }
+
+    document.getElementById('post-list-container').addEventListener('click', (e) => {
+        const editBtn = e.target.closest('[data-action="edit"]');
+        const delBtn = e.target.closest('[data-action="delete"]');
+        if (editBtn) startEditPost(editBtn.dataset.dir, editBtn.dataset.id);
+        if (delBtn) deletePost(delBtn.dataset.dir, delBtn.dataset.id);
+    });
+
+    /* === Edit an existing post: load its fields into the form === */
+    function startEditPost(dir, id) {
+        const post = (_loadedPosts[dir] || []).find(p => p.id === id);
+        if (!post) return;
+
+        _editState = { dir, id, page: post._page };
+
+        document.getElementById('title').value = post.title || '';
+        document.getElementById('image').value = post.image || '';
+        document.getElementById('link').value = post.targetLink || '';
+        document.getElementById('tasks').value = post.totalTasks || '';
+        document.getElementById('duration').value = post.duration || '';
+        if (post.uploadDate) {
+            const d = new Date(post.uploadDate);
+            document.getElementById('uploadDate').value = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+        }
+
+        const bothModeEl = document.getElementById('both-mode');
+        bothModeEl.checked = false;
+        bothModeEl.disabled = true;
+
+        document.getElementById('edit-banner').style.display = 'flex';
+        document.getElementById('edit-banner-text').textContent = `✏️ এডিট করছ: "${post.title || id}" (${dir}, ID: ${id})`;
+        document.getElementById('push-btn').textContent = '💾 Update Post';
+        document.getElementById('generate-only-btn').style.display = 'none';
+
+        document.getElementById('title').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    function cancelEdit() {
+        _editState = null;
+        const bothModeEl = document.getElementById('both-mode');
+        bothModeEl.checked = false;
+        bothModeEl.disabled = false;
+        document.getElementById('edit-banner').style.display = 'none';
+        document.getElementById('push-btn').textContent = '🚀 Generate & Push to GitHub';
+        document.getElementById('generate-only-btn').style.display = 'block';
+        ['title', 'image', 'link', 'tasks', 'duration'].forEach(id => document.getElementById(id).value = '');
+    }
+
+    async function saveEditedPost() {
+        const { owner, repo, branch, token } = getGithubCreds();
+        const { dir, id, page } = _editState;
+
+        resetStatus();
+        if (!owner || !repo || !token) {
+            logStatus('⚠️ Owner, Repo, আর Token — তিনটাই লাগবে।', 'err');
+            return;
+        }
+
+        const image = document.getElementById('image').value;
+        const targetLink = document.getElementById('link').value;
+        if (!image || !targetLink) {
+            logStatus('⚠️ Image URL আর Target Link অবশ্যই দিতে হবে।', 'err');
+            return;
+        }
+
+        const updatedObj = { id, image, targetLink };
+        const title = document.getElementById('title').value;
+        if (title) updatedObj.title = title;
+        const tasksVal = document.getElementById('tasks').value;
+        if (dir === 'tma-posts' && tasksVal) updatedObj.totalTasks = parseInt(tasksVal);
+        const duration = document.getElementById('duration').value;
+        if (duration) updatedObj.duration = duration;
+        const uploadDateVal = document.getElementById('uploadDate').value;
+        if (uploadDateVal) updatedObj.uploadDate = new Date(uploadDateVal).toISOString();
+
+        showOutput([{ dir, obj: updatedObj }]);
+
+        const pushBtn = document.getElementById('push-btn');
+        pushBtn.disabled = true;
+        const originalLabel = pushBtn.textContent;
+        pushBtn.textContent = 'সেভ হচ্ছে...';
+
+        try {
+            const pagePath = `${dir}/page-${page}.json`;
+            logStatus(`⏳ [${dir}] ${pagePath} পড়া হচ্ছে...`, 'info');
+            const pageFile = await ghGetFile(owner, repo, pagePath, branch, token);
+            let posts = pageFile ? JSON.parse(pageFile.content) : [];
+            const idx = posts.findIndex(p => p.id === id);
+            if (idx === -1) throw new Error(`পোস্ট "${id}" ${pagePath}-এ খুঁজে পাওয়া যায়নি — লিস্ট আবার লোড করে চেষ্টা করো।`);
+            posts[idx] = updatedObj;
+
+            const pageContent = JSON.stringify(posts, null, 2) + '\n';
+            logStatus(`⏳ [${dir}] ${pagePath} আপডেট করা হচ্ছে...`, 'info');
+            await ghPutFile(owner, repo, pagePath, branch, token, pageContent, `Update post ${id} in ${pagePath}`, pageFile.sha);
+            logStatus(`✅ [${dir}] পোস্ট "${id}" সফলভাবে আপডেট হয়েছে।`, 'ok');
+
+            if (_loadedPosts[dir]) {
+                const cacheIdx = _loadedPosts[dir].findIndex(p => p.id === id);
+                if (cacheIdx !== -1) _loadedPosts[dir][cacheIdx] = { ...updatedObj, _page: page };
+                renderAllLoadedLists();
+            }
+
+            cancelEdit();
+        } catch (err) {
+            console.error(err);
+            logStatus(`❌ ব্যর্থ হয়েছে: ${err.message}`, 'err');
+        } finally {
+            pushBtn.disabled = false;
+            pushBtn.textContent = _editState ? '💾 Update Post' : '🚀 Generate & Push to GitHub';
+        }
+    }
+
+    /* === Delete an existing post from its page file + manifest === */
+    async function deletePost(dir, id) {
+        const { owner, repo, branch, token } = getGithubCreds();
+        if (!owner || !repo || !token) {
+            alert('আগে Owner, Repo, আর Token দাও।');
+            return;
+        }
+
+        const post = (_loadedPosts[dir] || []).find(p => p.id === id);
+        if (!post) return;
+
+        const ok = confirm(`পোস্ট "${post.title || id}" (${dir}) ডিলিট করবে? এটা ফেরানো যাবে না।`);
+        if (!ok) return;
+
+        resetStatus();
+        try {
+            const page = post._page;
+            const pagePath = `${dir}/page-${page}.json`;
+            logStatus(`⏳ [${dir}] ${pagePath} পড়া হচ্ছে...`, 'info');
+            const pageFile = await ghGetFile(owner, repo, pagePath, branch, token);
+            let posts = pageFile ? JSON.parse(pageFile.content) : [];
+            const idx = posts.findIndex(p => p.id === id);
+            if (idx === -1) throw new Error(`পোস্ট "${id}" খুঁজে পাওয়া যায়নি — লিস্ট আবার লোড করো।`);
+            posts.splice(idx, 1);
+
+            const pageContent = JSON.stringify(posts, null, 2) + '\n';
+            logStatus(`⏳ [${dir}] ${pagePath} থেকে পোস্ট সরানো হচ্ছে...`, 'info');
+            await ghPutFile(owner, repo, pagePath, branch, token, pageContent, `Delete post ${id} from ${pagePath}`, pageFile.sha);
+            logStatus(`✅ [${dir}] ${pagePath} আপডেট হয়েছে।`, 'ok');
+
+            const manifestPath = `${dir}/manifest.json`;
+            logStatus(`⏳ [${dir}] ${manifestPath} পড়া হচ্ছে...`, 'info');
+            const manifestFile = await ghGetFile(owner, repo, manifestPath, branch, token);
+            let manifest = manifestFile ? JSON.parse(manifestFile.content) : { totalPages: 0, pageSize: 20, totalPosts: 0, postPages: {} };
+            const newPostPages = { ...(manifest.postPages || {}) };
+            delete newPostPages[id];
+            const newManifest = {
+                totalPages: manifest.totalPages || 0,
+                pageSize: manifest.pageSize || 20,
+                totalPosts: Math.max(0, (manifest.totalPosts || 0) - 1),
+                postPages: newPostPages
+            };
+            const manifestContent = JSON.stringify(newManifest, null, 2) + '\n';
+            logStatus(`⏳ [${dir}] ${manifestPath} আপডেট করা হচ্ছে...`, 'info');
+            await ghPutFile(owner, repo, manifestPath, branch, token, manifestContent, `Remove post ${id} from manifest`, manifestFile ? manifestFile.sha : undefined);
+            logStatus(`✅ [${dir}] পোস্ট "${id}" সম্পূর্ণভাবে ডিলিট হয়েছে।`, 'ok');
+
+            _loadedPosts[dir] = (_loadedPosts[dir] || []).filter(p => p.id !== id);
+            renderAllLoadedLists();
+
+            if (_editState && _editState.dir === dir && _editState.id === id) cancelEdit();
+        } catch (err) {
+            console.error(err);
+            logStatus(`❌ [${dir}] ডিলিট ব্যর্থ: ${err.message}`, 'err');
+        }
+    }
+
     /* === Main flow: generate one or two post objects, push each directory in turn === */
     async function pushToGithub() {
+        if (_editState) {
+            await saveEditedPost();
+            return;
+        }
+
         const owner  = document.getElementById('gh-owner').value.trim();
         const repo   = document.getElementById('gh-repo').value.trim();
         const branch = document.getElementById('gh-branch').value.trim() || 'main';

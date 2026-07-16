@@ -349,10 +349,14 @@
     /* === Infinite Scroll Controller (shared by TMA + Web modules) ===
        Data lives in chunked page files: {dir}/manifest.json + {dir}/page-1.json, page-2.json, ...
        Only the pages actually scrolled to are fetched — real network-level pagination,
-       not just staggered rendering of an already-downloaded array. */
+       not just staggered rendering of an already-downloaded array.
+       Posts are appended to the END of the highest-numbered page as they're created
+       (oldest → newest within the storage), so we walk pages newest → oldest
+       (totalPages down to 1) and reverse each page's array, putting the most
+       recently added post at the very top of the feed. */
 
     let _scrollObserver = null;
-    let _pageState = { dir: '', currentPage: 0, totalPages: 0, buildCard: null, attachListeners: null, cacheTarget: null };
+    let _pageState = { dir: '', pagesLoaded: 0, totalPages: 0, buildCard: null, attachListeners: null, cacheTarget: null };
 
     function teardownInfiniteScroll() {
       if (_scrollObserver) { _scrollObserver.disconnect(); _scrollObserver = null; }
@@ -376,27 +380,28 @@
     }
 
     async function loadNextPage() {
-      if (_pageState.currentPage >= _pageState.totalPages) return;
-      const nextPage = _pageState.currentPage + 1;
+      if (_pageState.pagesLoaded >= _pageState.totalPages) return;
+      const pageToLoad = _pageState.totalPages - _pageState.pagesLoaded;
 
       loadingMoreEl.classList.remove('hidden');
       try {
-        const posts = await fetchPage(_pageState.dir, nextPage);
-        posts.forEach((post, i) => {
+        const posts = await fetchPage(_pageState.dir, pageToLoad);
+        const orderedPosts = posts.slice().reverse();
+        orderedPosts.forEach((post, i) => {
           const card = _pageState.buildCard(post, i);
           postsGridEl.appendChild(card);
           if (_pageState.attachListeners) _pageState.attachListeners(card, post);
           if (_pageState.cacheTarget) _pageState.cacheTarget.push(post);
         });
-        _pageState.currentPage = nextPage;
+        _pageState.pagesLoaded++;
       } catch (err) {
-        console.error('[Pagination] Failed to load page', nextPage, err);
+        console.error('[Pagination] Failed to load page', pageToLoad, err);
         showToast(`Couldn't load more posts. Check your connection and scroll again to retry.`, 'error');
       } finally {
         loadingMoreEl.classList.add('hidden');
       }
 
-      if (_pageState.currentPage >= _pageState.totalPages) {
+      if (_pageState.pagesLoaded >= _pageState.totalPages) {
         if (_scrollObserver) _scrollObserver.disconnect();
         sentinelEl.classList.add('hidden');
         endOfListEl.classList.remove('hidden');
@@ -409,14 +414,16 @@
       const totalPages = manifest.totalPages || 0;
       if (totalPages === 0) throw new Error(`No posts found in ${dir}/manifest.json`);
 
-      _pageState = { dir, currentPage: 0, totalPages, buildCard, attachListeners, cacheTarget };
+      _pageState = { dir, pagesLoaded: 0, totalPages, buildCard, attachListeners, cacheTarget };
 
       const targetPage = (targetPostId && manifest.postPages) ? manifest.postPages[targetPostId] : null;
 
       if (targetPage) {
-        // Load every page up to and including the one holding the shared post,
+        // Newest-first means page `totalPages` loads before page 1. Load every
+        // page from the top down through the one holding the shared post,
         // then scroll to it and briefly highlight it. Scroll continues normally after.
-        for (let p = 1; p <= targetPage && p <= totalPages; p++) {
+        const pagesToLoad = totalPages - targetPage + 1;
+        while (_pageState.pagesLoaded < pagesToLoad) {
           await loadNextPage();
         }
         const targetCard = postsGridEl.querySelector(`[data-post-id="${targetPostId}"]`);
@@ -439,7 +446,7 @@
 
       _scrollObserver = new IntersectionObserver((entries) => {
         entries.forEach((entry) => {
-          if (entry.isIntersecting && _pageState.currentPage < _pageState.totalPages) {
+          if (entry.isIntersecting && _pageState.pagesLoaded < _pageState.totalPages) {
             loadNextPage();
           }
         });
