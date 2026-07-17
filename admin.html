@@ -100,6 +100,7 @@
             </div>
             <input type="file" id="image-file" accept="image/*" style="display:none;" onchange="handleImageFileSelect(event)">
             <div id="image-upload-status" class="upload-status"></div>
+            <div id="image-preview-status" class="upload-status" style="display:none;"></div>
             <img id="image-preview" alt="preview">
         </div>
         <div class="field"><label>Target Link</label><input type="text" id="link"></div>
@@ -190,16 +191,72 @@
         });
     }
 
+    /* === Image preview with auto-retry ===
+       Right after upload, GitHub Pages usually takes 1-2 minutes to actually
+       serve the new file — a plain <img src="..."> would just show a broken
+       icon during that window. Instead we test-load it in the background,
+       show a "লোড হচ্ছে..." status while it's not ready yet, and retry every
+       10s for up to 2 minutes; the real <img> only gets the src once it's
+       confirmed to load. */
+    let _previewRetryTimer = null;
+    let _previewRetryUrl = null;
+
+    function clearPreviewRetry() {
+        if (_previewRetryTimer) { clearTimeout(_previewRetryTimer); _previewRetryTimer = null; }
+        _previewRetryUrl = null;
+    }
+
     function updateImagePreview() {
         const url = document.getElementById('image').value.trim();
         const previewEl = document.getElementById('image-preview');
-        if (url) {
-            previewEl.src = url;
-            previewEl.style.display = 'block';
-        } else {
+        const statusEl = document.getElementById('image-preview-status');
+
+        clearPreviewRetry();
+
+        if (!url) {
             previewEl.style.display = 'none';
             previewEl.removeAttribute('src');
+            statusEl.style.display = 'none';
+            return;
         }
+
+        attemptPreviewLoad(url, 0);
+    }
+
+    function attemptPreviewLoad(url, attempt) {
+        const MAX_ATTEMPTS = 12;  // 12 retries × 10s ≈ 2 minutes
+        const RETRY_MS = 10000;
+
+        _previewRetryUrl = url;
+        const previewEl = document.getElementById('image-preview');
+        const statusEl = document.getElementById('image-preview-status');
+
+        previewEl.style.display = 'none';
+        statusEl.style.display = 'block';
+        statusEl.className = 'upload-status info';
+        statusEl.textContent = attempt === 0
+            ? '⏳ প্রিভিউ লোড হচ্ছে...'
+            : `⏳ প্রিভিউ লোড হচ্ছে... (চেষ্টা ${attempt + 1}/${MAX_ATTEMPTS + 1})`;
+
+        const tester = new Image();
+        tester.onload = () => {
+            if (_previewRetryUrl !== url) return; // field changed since — ignore stale result
+            previewEl.src = url;
+            previewEl.style.display = 'block';
+            statusEl.style.display = 'none';
+            clearPreviewRetry();
+        };
+        tester.onerror = () => {
+            if (_previewRetryUrl !== url) return;
+            if (attempt >= MAX_ATTEMPTS) {
+                statusEl.className = 'upload-status err';
+                statusEl.textContent = '⚠️ প্রিভিউ লোড করা যায়নি (২ মিনিট চেষ্টা করা হয়েছে)। লিংকটা ঠিক আছে কিনা দেখো, বা কিছুক্ষণ পর ফিল্ডে আবার একই লিংক বসিয়ে দেখো।';
+                clearPreviewRetry();
+                return;
+            }
+            _previewRetryTimer = setTimeout(() => attemptPreviewLoad(url, attempt + 1), RETRY_MS);
+        };
+        tester.src = url;
     }
 
     async function handleImageFileSelect(e) {
