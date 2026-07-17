@@ -135,8 +135,36 @@
     .web-mode .web-only { display: block; }
     .tma-mode .tma-only { display: block; }
   </style>
+  <style>
+    #splash-screen { position: fixed; inset: 0; z-index: 99999; background: var(--bg-void); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; transition: opacity 0.5s ease; }
+    #splash-screen.splash-hidden { opacity: 0; pointer-events: none; }
+    .splash-ring { position: relative; width: 84px; height: 84px; }
+    .splash-ring::before { content: ''; position: absolute; inset: 0; border-radius: 50%; border: 3px solid rgba(255,77,126,0.15); }
+    .splash-ring::after { content: ''; position: absolute; inset: 0; border-radius: 50%; border: 3px solid transparent; border-top-color: var(--neon-rose); border-right-color: var(--neon-rose); box-shadow: 0 0 24px rgba(255,77,126,0.55); animation: splash-spin 0.9s linear infinite; }
+    .splash-dot { position: absolute; top: 50%; left: 50%; width: 34px; height: 34px; transform: translate(-50%, -50%); background: var(--neon-rose); border-radius: 50%; box-shadow: 0 0 30px rgba(255,77,126,0.7); }
+    @keyframes splash-spin { to { transform: rotate(360deg); } }
+    .splash-label { font-size: 11px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-secondary); }
+  </style>
 </head>
 <body>
+
+  <div id="splash-screen">
+    <div class="splash-ring"><div class="splash-dot"></div></div>
+    <div class="splash-label">Loading Premium Access</div>
+  </div>
+  <script>
+    (function () {
+      var SPLASH_MIN_MS = 1200; // how long the splash stays visible before fading
+      function hideSplash() {
+        var el = document.getElementById('splash-screen');
+        if (!el) return;
+        el.classList.add('splash-hidden');
+        setTimeout(function () { el.remove(); }, 500);
+      }
+      setTimeout(hideSplash, SPLASH_MIN_MS);
+    })();
+  </script>
+
 
   <header class="app-header">
     <a href="#" class="logo" aria-label="CineVault Home">
